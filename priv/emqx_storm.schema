@@ -1,0 +1,142 @@
+%%-*- mode: erlang -*-
+%% emqx_storm config mapping
+
+{mapping, "storm.$name.address", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.start_type", "emqx_storm.storms", [
+  {datatype, {enum, [manual, auto]}},
+  {default, auto}
+]}.
+
+{mapping, "storm.$name.ssl", "emqx_storm.storms", [
+  {datatype, flag},
+  {default, off}
+]}.
+
+{mapping, "storm.$name.cacertfile", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.certfile", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.keyfile", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.ciphers", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.devicekey", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.devicesecret", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.clean_start", "emqx_storm.storms", [
+  {default, true},
+  {datatype, {enum, [true, false]}}
+]}.
+
+{mapping, "storm.$name.proto_ver", "emqx_storm.storms", [
+  {datatype, {enum, [mqttv3, mqttv4, mqttv5]}}
+]}.
+
+{mapping, "storm.$name.uid", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.reconnect_interval", "emqx_storm.storms", [
+  {default, "30s"},
+  {datatype, {duration, ms}}
+]}.
+
+{mapping, "storm.$name.retry_interval", "emqx_storm.storms", [
+  {default, "20s"},
+  {datatype, {duration, ms}}
+]}.
+
+{mapping, "storm.$name.max_inflight", "emqx_storm.storms", [
+  {default, 0},
+  {datatype, integer}
+]}.
+
+{mapping, "storm.$name.keepalive", "emqx_storm.storms", [
+  {default, "10s"},
+  {datatype, {duration, ms}}
+]}.
+
+{mapping, "storm.$name.tls_versions", "emqx_storm.storms", [
+  {datatype, string},
+  {default, "tlsv1,tlsv1.1,tlsv1.2"}
+]}.
+
+{mapping, "storm.$name.topic.$duty.receive", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.topic.$duty.send", "emqx_storm.storms", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.$name.topic.$duty.qos", "emqx_storm.storms", [
+  {datatype, integer}
+]}.
+
+{translation, "emqx_storm.storms", fun(Conf) ->
+  Split = fun(undefined) -> undefined; (S) -> string:tokens(S, ",") end,
+  IsSsl = fun(cacertfile)   -> true;
+             (certfile)     -> true;
+             (keyfile)      -> true;
+             (ciphers)      -> true;
+             (tls_versions) -> true;
+             (_Opt)         -> false
+          end,
+  Parse = fun(tls_versions, Vers) ->
+                  {versions, [list_to_atom(S) || S <- Split(Vers)]};
+             (ciphers, Ciphers) ->
+                  {ciphers, Split(Ciphers)};
+             (Opt, Val) ->
+                  {Opt, Val}
+          end,
+  Merge = fun(forwards, Val, Opts) ->
+                  [{forwards, string:tokens(Val, ",")}|Opts];
+             (Opt, Val, Opts) ->
+                  case IsSsl(Opt) of
+                      true ->
+                          SslOpts = [Parse(Opt, Val) | proplists:get_value(ssl_opts, Opts, [])],
+                          lists:ukeymerge(1, [{ssl_opts, SslOpts}], lists:usort(Opts));
+                      false ->
+                          [{Opt, Val}|Opts]
+                  end
+          end,
+  MergeInteraction = fun Merge ([Head1 | List1], [Head2 | List2], [Head3 | List3], Result) ->
+                             {Duty, recv, Receive} = Head1,
+                             {Duty, send, Send} = Head2,
+                             {Duty, qos, QoS} = Head3,
+                             NewResult = [{list_to_atom(Duty), [{recv, Receive}, {send, Send}, {qos, QoS}]} | Result],
+                             Merge(List1, List2, List3, NewResult);
+                         Merge ([], [], [], Result) ->
+                             Result
+                     end,
+  Interactions = fun(Name) ->
+                     Configs = cuttlefish_variable:filter_by_prefix("storm." ++ Name ++ ".topic", Conf),
+                     MergeInteraction([{Duty, recv, Receive} || {[_, _, "topic", Duty, "receive"], Receive} <- Configs],
+                                      [{Duty, send, Send} || {[_, _, "topic", Duty, "send"], Send} <- Configs],
+                                      [{Duty, qos, QoS} || {[_, _, "topic", Duty, "qos"], QoS} <- Configs], [])
+                 end,
+  maps:to_list(
+      lists:foldl(
+        fun({["storm", Name, Opt], Val}, Acc) ->
+                Init = [{list_to_atom(Opt), Val}, {interaction, Interactions(Name)}],
+                maps:update_with(list_to_atom(Name),
+                                 fun(Opts) -> Merge(list_to_atom(Opt), Val, Opts) end, Init, Acc);
+           (_, Acc) -> Acc
+        end, #{}, lists:usort(cuttlefish_variable:filter_by_prefix("storm.", Conf))))
+end}.
