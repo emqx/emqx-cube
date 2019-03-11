@@ -125,18 +125,73 @@
                          Merge ([], [], [], Result) ->
                              Result
                      end,
+  ParseTokens = fun PT(["${uid}"| RestTokens], Uid, DeviceKey, Acc0) ->
+                        PT(RestTokens, Uid, DeviceKey, [Uid | Acc0]);
+                    PT(["${devicekey}" | RestTokens], Uid, DeviceKey, Acc0) ->
+                        PT(RestTokens, Uid, DeviceKey, [DeviceKey | Acc0]);
+                    PT([], _Uid, _DeviceKey, Acc0)->
+                        lists:reverse(Acc0);
+                    PT([Token | RestTokens], Uid, DeviceKey, Acc0)->
+                        PT(RestTokens, Uid, DeviceKey, [Token ++ "/" | Acc0])
+                end,
+  
+  TransInteraction = fun(Interactions, Uid, DeviceKey) ->
+                         io:format("~n Interactions: ~p~n~n", [Interactions]),
+                         lists:foldl(fun({Duty, Items}, Acc) ->
+                                         RawTopic = proplists:get_value(recv, Items),
+                                         TokenList = string:tokens(RawTopic, "/"),
+                                         io:format("~n~nRawtopic: ~p~n~n", [RawTopic]),
+                                         RealTopic = lists:flatten(ParseTokens(TokenList, Uid, DeviceKey, [])),
+                                         io:format("~n~nRealtopic: ~p~n~n", [RealTopic]),
+                                         Items1 = proplists:delete(recv, Items),
+                                         [{Duty, [{recv, RealTopic} | Items1]} | Acc]
+                                     end, [], Interactions)
+                     end,
   Interactions = fun(Name) ->
                      Configs = cuttlefish_variable:filter_by_prefix("storm." ++ Name ++ ".topic", Conf),
                      MergeInteraction([{Duty, recv, Receive} || {[_, _, "topic", Duty, "receive"], Receive} <- Configs],
                                       [{Duty, send, Send} || {[_, _, "topic", Duty, "send"], Send} <- Configs],
                                       [{Duty, qos, QoS} || {[_, _, "topic", Duty, "qos"], QoS} <- Configs], [])
                  end,
-  maps:to_list(
-      lists:foldl(
+  Translate = fun Tr(devicekey, DeviceKey, Cfg) ->
+                      Cfg#{client_id => DeviceKey,
+                           username  => DeviceKey};
+                  Tr(devicesecret, DeviceSecret, Cfg) ->
+                      Cfg#{password => DeviceSecret};
+                  Tr(address, Address, Cfg) ->
+                      {Host, Port} = case string:tokens(Address, ":") of
+                                         [H] -> {H, 1883};
+                                         [H, P] -> {H, list_to_integer(P)}
+                                     end,
+                      Cfg#{host => Host, port => Port};
+                  Tr(reconnect_interval, Ms, Cfg) ->
+                      Cfg#{reconnect_delay_ms => Ms};
+                  Tr(proto_ver, Ver, Cfg) ->
+                      Cfg#{proto_ver => case Ver of
+                                            mqttv3 -> v3;
+                                            mqttv4 -> v4;
+                                            mqttv5 -> v5;
+                                            _ -> v4
+                                        end};
+                  Tr(Key, Value, Cfg) ->
+                      Cfg#{Key => Value}
+              end,
+    C = lists:foldl(
         fun({["storm", Name, Opt], Val}, Acc) ->
-                Init = [{list_to_atom(Opt), Val}, {interaction, Interactions(Name)}],
-                maps:update_with(list_to_atom(Name),
-                                 fun(Opts) -> Merge(list_to_atom(Opt), Val, Opts) end, Init, Acc);
+                Init = [{list_to_atom(Opt), Val},
+                        {interaction, Interactions(Name)}],
+                maps:update_with(list_to_atom(Name), fun(Opts) -> Merge(list_to_atom(Opt), Val, Opts) end, Init, Acc);
            (_, Acc) -> Acc
-        end, #{}, lists:usort(cuttlefish_variable:filter_by_prefix("storm.", Conf))))
+        end, #{}, lists:usort(cuttlefish_variable:filter_by_prefix("storm.", Conf))),
+    C1 = maps:map(fun(Bn, Bc) ->
+                      Bc1 = maps:fold(Translate, #{}, maps:from_list(Bc)),
+                      Inters = maps:get(interaction, Bc1),
+                      DeviceKey = maps:get(client_id, Bc1),
+                      Uid = maps:get(uid, Bc1),
+                      NewInters = TransInteraction(Inters, Uid, DeviceKey),
+                          
+                      maps:to_list(maps:update(interaction, NewInters, Bc1))
+                          %% maps:to_list(maps:fold(Translate, #{}, maps:from_list(Bc)))
+                  end, C),
+    maps:to_list(C1)
 end}.

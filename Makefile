@@ -7,9 +7,10 @@ NO_AUTOPATCH = cuttlefish
 DEPS = jsx
 dep_jsx    = git-emqx https://github.com/talentdeficit/jsx 2.9.0
 
-BUILD_DEPS = emqx cuttlefish
+BUILD_DEPS = emqx cuttlefish emqx_management
 dep_emqx       = git-emqx https://github.com/emqx/emqx emqx30
 dep_cuttlefish = git-emqx https://github.com/emqx/cuttlefish v2.2.1
+dep_emqx_management = git-emqx https://github.com/emqx/emqx-management emqx30
 
 ERLC_OPTS += +debug_info
 
@@ -29,7 +30,7 @@ include erlang.mk
 CUTTLEFISH_SCRIPT = _build/default/lib/cuttlefish/cuttlefish
 
 app.config: $(CUTTLEFISH_SCRIPT) etc/emqx_storm.conf
-	$(verbose) $(CUTTLEFISH_SCRIPT) -l info -e etc/ -c etc/emqx_storm.conf -i priv/emqx_storm.schema -d data
+	$(verbose) $(CUTTLEFISH_SCRIPT) -l debug -e etc/ -c etc/emqx_storm.conf -i priv/emqx_storm.schema -d data
 
 $(CUTTLEFISH_SCRIPT): rebar-deps
 	@if [ ! -f cuttlefish ]; then make -C _build/default/lib/cuttlefish; fi

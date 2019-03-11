@@ -13,6 +13,9 @@
 %% limitations under the License.
 -module(emqx_storm_app).
 
+-include("emqx_storm.hrl").
+-include_lib("stdlib/include/qlc.hrl").
+
 -behaviour(application).
 -behaviour(supervisor).
 
@@ -60,16 +63,54 @@ storms() ->
                   ignore.
 init([]) ->
     Supflag = #{strategy => one_for_one,
-                intensity => 10,
-                period => 100},
-    StormOpts = application:get_env(?APP, storms, []),
-    Storm = [child_spec(Opts) || Opts <- StormOpts],
+                intensity => 100,
+                period => 10},
+    ok = ekka_mnesia:create_table(configuration, [{disc_copies, [node()]},
+                                                  {attributes, record_info(fields, configuration)}]),
+    ok = ekka_mnesia:copy_table(configuration, disc_copies),
+    DefaultOpts = application:get_env(?APP, storms, []),
+    ok = lists:foreach(fun add_default_config/1, DefaultOpts),
+    StormOpts = storm_options(),
+    Storm = [storm_spec(Opts) || Opts <- StormOpts],
     {ok, {Supflag, Storm}}.
 
-child_spec({Id, Options}) ->
-    #{id       => Id,
-      start    => {emqx_storm, start_link, [Id, Options]},
+-spec storm_spec(Args :: tuple()) ->
+                        ChildSpec :: supervisor:child_spec().
+storm_spec({Name, Options}) ->
+    #{id       => Name,
+      start    => {emqx_storm, start_link, [Name, Options]},
       restart  => permanent,
       shutdown => 5000,
       type     => worker,
       modules  => [emqx_storm]}.
+
+-spec storm_options() -> ok.
+storm_options() ->
+    QueryOptions = fun() ->
+                       Q = qlc:q([{Config#configuration.id, Config#configuration.options } 
+                                  || Config <- mnesia:table(configuration)]),
+                       qlc:e(Q)
+                   end,
+    {atomic, Configs} = mnesia:transaction(QueryOptions),
+    Configs.
+
+-spec add_default_config(DefaultConfig :: tuple()) -> ok | {error, any()}.
+add_default_config({Id, Options}) ->
+    add_config(Id, Options).
+
+-spec add_config(Id :: atom() | list(), Options :: tuple()) -> ok | {error, any()}.
+add_config(Id, Options) ->
+    Config = #configuration{id = Id, options = Options},
+    return(mnesia:transaction(fun insert_config/1, [Config])).
+
+-spec insert_config(Config :: configuration()) ->  ok | no_return().
+insert_config(Config = #configuration{id = Id}) ->
+    case mnesia:read(configuration, Id) of
+        [] -> mnesia:write(Config);
+        [_ | _] -> mnesia:abort(existed)
+    end.
+
+-spec return(Args :: {atomic, ok} | {aborted, any()})
+            -> ok | {error, Error :: any()}.
+return({atomic, ok})     -> ok;
+return({aborted, Error}) -> {error, Error}.
