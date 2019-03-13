@@ -215,22 +215,22 @@ handle_msg(#{topic     := DataSyncTopic,
              payload   := Payload},
            #{datasync := #{recv := DataSyncTopic,
                            send := RspTopic}}) ->
-    ClientId = get_clientid(DataSyncTopic),
-    DataSyncReq = emqx_json:safe_decode(Payload),
-    RspPayload = handle_datasync(DataSyncReq, ClientId),
-    RspMsg = make_resp_msg(RspTopic, RspPayload),
-    ok = send_response(RspMsg);
+    handle_request("datasync", DataSyncTopic, Payload, RspTopic);
 handle_msg(#{topic     := SysTopic,
              payload   := Payload},
            #{sys := #{recv := SysTopic,
                       send := RspTopic}}) ->
-    ClientId = get_clientid(DataSyncTopic),
-    DataSyncReq = emqx_json:safe_decode(Payload),
-    RspPayload = handle_sys(DataSyncReq),
-    RspMsg = make_resp_msg(RspTopic, RspPayload),
-    ok = send_response(RspMsg);
+    handle_request("sys", SysTopic, Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.
+
+handle_request(Type, ControlTopic, Payload, RspTopic) ->
+    ClientId = get_clientid(ControlTopic),
+    Req = emqx_json:safe_decode(Payload),
+    HandleFun = list_to_atom("handle_" ++ Type),
+    RspPayload = HandleFun(Req, ClientId),
+    RspMsg = make_resp_msg(RspTopic, RspPayload),
+    ok = send_response(RspMsg).
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
     lists:foreach(fun({Topic, QoS}) ->
