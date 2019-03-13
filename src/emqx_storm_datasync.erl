@@ -14,14 +14,21 @@
 
 -module(emqx_storm_datasync).
 
--export([list/1, update/1, 
-         query/1, create/1, 
-         start/1, stop/1, 
+-include("emqx_storm.hrl").
+-include_lib("emqx/include/emqx_mqtt.hrl").
+-include_lib("emqx/include/logger.hrl").
+
+-export([list/1,
+         update/1,
+         query/1,
+         create/1,
+         start/1,
+         stop/1,
          delete/1]).
 
-list(#{id := Id}) ->
+list(#{ := Id}) ->
     ok;
-list(_) ->
+list(#{}) ->
     ok.
 
 update(A) ->

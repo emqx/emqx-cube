@@ -12,11 +12,11 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--record(configuration, {id       :: atom() | list(),
-                        options  :: tuple()}).
+-record(bridges, {id       :: atom() | list(),
+                  options  :: tuple()}).
 
--type configuration() :: #configuration{}.
+-type bridges() :: #bridges{}.
 
 -define(APP, emqx_storm).
 
--define(SERVER, ?MODULE).
+-define(TAB, bridges).

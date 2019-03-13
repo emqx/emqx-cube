@@ -19,6 +19,8 @@
 
 -behaviour(supervisor).
 
+-define(SERVER, ?MODULE).
+
 %% API
 -export([start_link/0,
          storms/0]).
