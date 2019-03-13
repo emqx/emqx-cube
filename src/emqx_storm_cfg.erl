@@ -34,7 +34,14 @@ init() ->
     ok = ekka_mnesia:copy_table(?TAB, disc_copies).
 
 -spec(all_bridges() -> list()).
-all_bridges() -> mnesia:dirty_all_keys(?TAB).
+all_bridges() -> 
+    Query = fun() ->
+                    Q = qlc:q([{Bridge#?TAB.id, Bridge#?TAB.options} 
+                               || Bridge <- mnesia:table(?TAB)]),
+                    qlc:e(Q)
+            end,
+    {atomic, Configs} = mnesia:transaction(Query),
+    Configs.
 
 -spec add_bridge(Id :: atom() | list(), Options :: tuple()) 
                 -> ok | {error, any()}.

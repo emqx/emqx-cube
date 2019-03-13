@@ -40,13 +40,7 @@
                    {error, Reason :: term()}.
 start(_StartType, _StartArgs) ->
     emqx_storm_cfg:init(),
-    case emqx_storm_sup:start_link() of
-        {ok, Sup} ->
-            {ok, Sup};
-        Error ->
-            Error
-    end.
-
+    emqx_storm_sup:start_link().
 %%--------------------------------------------------------------------
 %% @private
 %% @doc

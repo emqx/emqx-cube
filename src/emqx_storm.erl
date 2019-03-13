@@ -77,18 +77,20 @@ callback_mode() -> [state_functions, state_enter].
                   gen_statem:init_result(atom()).
 init(Config) ->
     process_flag(trap_exit, true),
-    Get = fun(K, D) -> maps:get(K, Config, D) end,
-    Interactions = Get(interaction, []),
-    DataSync = maps:from_list(proplists:get_value(datasync, Interactions)),
-    Monitor = maps:from_list(proplists:get_value(monitor, Interactions)),
-    ConnectConfig = maps:without([interaction,
-                                  reconnect_delay_ms,
-                                  uid], Config#{datasync => DataSync,
-                                                monitor => Monitor}),
+    GetD = fun(K, D) -> maps:get(K, Config, D) end,
+    Get = fun(K) -> maps:get(K, Config) end,
+    ClientId = list_to_binary(Get(client_id)),
+    DataSync = #{recv => <<"sys/control/", ClientId/binary>>,
+                 snd => <<"sys/ack/", ClientId/binary>>},
+    Sys = #{recv => <<"sys/control/", ClientId/binary>>,
+            snd => <<"sys/ack/", ClientId/binary>>},
+    ConnectConfig = maps:without([reconnect_delay_ms], 
+                                 Config#{datasync => DataSync,
+                                         sys => Sys}),
     ConnectFun = fun() -> connect(ConnectConfig) end,
     {ok, connecting, #{connect_fun => ConnectFun,
-                        reconnect_delay_ms => Get(reconnect_delay_ms , ?DEFAULT_RECONNECT_DELAY_MS),
-                        uid => maps:get(uid, Config)}}.
+                       reconnect_delay_ms => GetD(reconnect_delay_ms, 
+                                                 ?DEFAULT_RECONNECT_DELAY_MS)}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -116,7 +118,6 @@ connecting(info, {disconnected, _Ref, _Reason}, _State) ->
 connecting(Type, Content, State) ->
     common(connecting, Type, Content, State).
 
-%% @doc Send batches to remote node/cluster when in 'connected' state.
 connected(enter, _OldState, _State) ->
     keep_state_and_data;
 connected(info, {disconnected, ConnRef, Reason},
@@ -170,16 +171,15 @@ code_change(_OldVsn, State, Data, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-connect(Config = #{datasync := DataSync, 
-                   monitor := Monitor, 
-                   client_id := ClientId}) ->
+connect(Config = #{datasync  := DataSync, 
+                   sys       := Sys}) ->
     Ref = make_ref(),
     Parent = self(),
-    Handlers = make_msg_handler(DataSync, Monitor, ClientId, Parent, Ref),
+    Handlers = make_msg_handler(DataSync, Sys, Parent, Ref),
     GetS = fun(K, V) -> maps:get(K, V) end,
-    Subs = [{GetS(recv, DataSync), GetS(qos, DataSync)},
-            {GetS(recv, Monitor), GetS(qos, Monitor)}],
-    ConnectConfig = maps:without([datasync, monitor], 
+    Subs = [{GetS(recv, DataSync), 1},
+            {GetS(recv, Sys), 1}],
+    ConnectConfig = maps:without([datasync, sys], 
                                  Config#{subscriptions => Subs,
                                          msg_handler => Handlers}),
     case emqx_client:start_link(ConnectConfig) of
@@ -187,7 +187,7 @@ connect(Config = #{datasync := DataSync,
             case emqx_client:connect(Pid) of
                 {ok, _} ->
                     try
-                        subscribe_remote_topics(Pid, maps:get(subscriptions, Config, [])),
+                        subscribe_remote_topics(Pid, Subs),
                         {ok, Ref, Pid}
                     catch
                         throw : Reason ->
@@ -203,41 +203,31 @@ name() -> {_, Name} = process_info(self(), registered_name), Name.
 
 name(Id) -> list_to_atom(lists:concat([?MODULE, "_", Id])).
 
-id(Pid) when is_pid(Pid) -> Pid;
-id(Name) -> name(Name).
-
-make_msg_handler(DataSync, Monitor, ClientId, Parent, Ref) ->
+make_msg_handler(DataSync, Sys, Parent, Ref) ->
     #{publish => fun(Msg) -> 
-                         handle_msg(Msg, #{datasync => DataSync,
-                                           monitor => Monitor,
-                                           client_id => ClientId}) 
+                         handle_msg(Msg, #{datasync  => DataSync,
+                                           sys       => Sys}) 
                  end,
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
 
 handle_msg(#{topic     := DataSyncTopic, 
-             payload   := Payload,
-             client_id := ClientId},
+             payload   := Payload},
            #{datasync := #{recv := DataSyncTopic,
-                           send := RspTopic,
-                           qos  := QoS}}) ->
+                           send := RspTopic}}) ->
+    ClientId = get_clientid(DataSyncTopic),
     DataSyncReq = emqx_json:safe_decode(Payload),
-    RspPayload = handle_monitor(DataSyncReq, ClientId),
-    RspMsg = #mqtt_msg{qos = QoS,
-                       topic = RspTopic,
-                       payload = RspPayload},
+    RspPayload = handle_datasync(DataSyncReq, ClientId),
+    RspMsg = make_resp_msg(RspTopic, RspPayload),
     ok = send_response(RspMsg);
-handle_msg(#{topic     := MonitorTopic,
-             payload   := Payload,
-             client_id := ClientId},
-           #{monitor := #{recv := MonitorTopic,
-                          send := RspTopic,
-                          qos  := QoS}}) ->
+handle_msg(#{topic     := SysTopic,
+             payload   := Payload},
+           #{sys := #{recv := SysTopic,
+                      send := RspTopic}}) ->
+    ClientId = get_clientid(DataSyncTopic),
     DataSyncReq = emqx_json:safe_decode(Payload),
-    RspPayload = handle_monitor(DataSyncReq, ClientId),
-    RspMsg = #mqtt_msg{qos = QoS,
-                       topic = RspTopic,
-                       payload = RspPayload},
+    RspPayload = handle_sys(DataSyncReq),
+    RspMsg = make_resp_msg(RspTopic, RspPayload),
     ok = send_response(RspMsg);
 handle_msg(_Msg, _Interaction) ->
     ok.
@@ -273,7 +263,7 @@ handle_datasync(DataSyncReq, ClientId) ->
     Resp = return(maps:from_list(Result)),
     restruct(Resp, DataSyncReq, ClientId).
 
-handle_monitor(MonitorReq, ClientId) ->
+handle_sys(MonitorReq, ClientId) ->
     Fun = b2a(get_value(<<"action">>, MonitorReq, [])),
     RawArgs = emqx_json:safe_decode(
                 get_value(<<"payload">>, MonitorReq, []),
@@ -281,7 +271,7 @@ handle_monitor(MonitorReq, ClientId) ->
     Args = convert(RawArgs),
     {ok, Result} = emqx_storm_monitor:Fun(Args),
     Resp = return(maps:from_list(Result)),
-    restruct(Resp, MonitorReq, ClientId).
+    restruct(Resp, sysReq, ClientId).
 
 b2a(Data) ->
     binary_to_atom(Data, utf8).
@@ -312,3 +302,12 @@ delete_by_keys([], Req) ->
     Req;
 delete_by_keys([Key | LeftKeys], Req) ->
     delete_by_keys(LeftKeys, delete(Key, Req)).
+
+make_resp_msg(Topic, Payload) ->
+    #mqtt_msg{qos = 1,
+              topic = Topic,
+              payload = Payload}.
+
+get_clientid(Topic) ->
+    Tokens = emqx_topic:tokens(Topic),
+    lists:last(Tokens).

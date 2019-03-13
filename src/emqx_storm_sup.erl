@@ -22,8 +22,7 @@
 -define(SERVER, ?MODULE).
 
 %% API
--export([start_link/0,
-         storms/0]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -52,10 +51,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Whenever a supervisor is started using supervisor:start_link/[2,3],
-%% this function is called by the new process to find out about
-%% restart strategy, maximum restart intensity, and child
-%% specifications.
+%% init storm supervisor
 %% @end
 %%--------------------------------------------------------------------
 -spec init(Args :: term()) ->
@@ -66,13 +62,8 @@ init([]) ->
     SupFlags = #{strategy => one_for_one,
                  intensity => 100,
                  period => 10},
-    StormOpts = application:get_env(?APP, storms, []),
-    Storm = [storm_spec(Opts) || Opts <- StormOpts],
-    {ok, {SupFlags, Storm}}.
-
--spec(storms() -> any()).
-storms() ->
-    [{Name, emqx_storm:status(Pid)} || {Name, Pid, _, _} <- supervisor:which_children(?MODULE)].
+    Options = application:get_env(?APP, storms, []),
+    {ok, {SupFlags, storm_spec(Options)}}.
 
 %%%===================================================================
 %%% Internal functions
@@ -80,9 +71,9 @@ storms() ->
 
 -spec storm_spec(Args :: tuple()) ->
                         ChildSpec :: supervisor:child_spec().
-storm_spec({Name, Options}) ->
-    #{id       => Name,
-      start    => {emqx_storm, start_link, [Name, Options]},
+storm_spec(Options) ->
+    #{id       => storm,
+      start    => {emqx_storm, start_link, [storm, Options]},
       restart  => permanent,
       shutdown => 5000,
       type     => worker,
