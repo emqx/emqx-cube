@@ -126,7 +126,7 @@
                              Result
                      end,
   ParseTokens = fun PT(["${uid}"| RestTokens], Uid, DeviceKey, Acc0) ->
-                        PT(RestTokens, Uid, DeviceKey, [Uid | Acc0]);
+                        PT(RestTokens, Uid, DeviceKey, [Uid ++ "/" | Acc0]);
                     PT(["${devicekey}" | RestTokens], Uid, DeviceKey, Acc0) ->
                         PT(RestTokens, Uid, DeviceKey, [DeviceKey | Acc0]);
                     PT([], _Uid, _DeviceKey, Acc0)->
@@ -136,13 +136,10 @@
                 end,
   
   TransInteraction = fun(Interactions, Uid, DeviceKey) ->
-                         io:format("~n Interactions: ~p~n~n", [Interactions]),
                          lists:foldl(fun({Duty, Items}, Acc) ->
                                          RawTopic = proplists:get_value(recv, Items),
                                          TokenList = string:tokens(RawTopic, "/"),
-                                         io:format("~n~nRawtopic: ~p~n~n", [RawTopic]),
                                          RealTopic = lists:flatten(ParseTokens(TokenList, Uid, DeviceKey, [])),
-                                         io:format("~n~nRealtopic: ~p~n~n", [RealTopic]),
                                          Items1 = proplists:delete(recv, Items),
                                          [{Duty, [{recv, RealTopic} | Items1]} | Acc]
                                      end, [], Interactions)

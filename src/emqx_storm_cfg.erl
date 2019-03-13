@@ -12,32 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(emqx_storm_datasync).
+-module(emqx_storm_cfg).
 
--export([list/1, update/1, 
-         query/1, create/1, 
-         start/1, stop/1, 
-         delete/1]).
-
-list(#{id := Id}) ->
-    ok;
-list(_) ->
-    ok.
-
-update(A) ->
-    ok.
-
-query(A) ->
-    ok.
-
-create(A) ->
-    ok.
-
-start(A) ->
-    ok.
-
-stop(A) ->
-    ok.
-
-delete(A) ->
-    ok.
+-include("emqx_storm.hrl").
+-include_lib("stdlib/include/qlc.hrl").

@@ -16,10 +16,8 @@
 
 -export([nodes/1, stats/1, metrics/1, connections/1, sessions/1, topics/1, subscriptions/1]).
 
-nodes(Binding = #{node := _Node, cluster := false}) ->
-    emqx_mgmt_api_nodes:get(Binding, params);
-nodes(#{cluster := true}) ->
-    emqx_mgmt_api_nodes:list(bindings, params).
+nodes(Binding = #{node := _Node}) ->
+    emqx_mgmt_api_nodes:get(Binding, params).
 
 stats(Bindings = #{node := Node}) when Node =:= node() ->
     emqx_mgmt_api_stats:lookup(Bindings, params);

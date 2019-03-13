@@ -16,3 +16,7 @@
                         options  :: tuple()}).
 
 -type configuration() :: #configuration{}.
+
+-define(APP, emqx_storm).
+
+-define(SERVER, ?MODULE).
