@@ -66,12 +66,7 @@ init([]) ->
     SupFlags = #{strategy => one_for_one,
                  intensity => 100,
                  period => 10},
-    ok = ekka_mnesia:create_table(configuration, [{disc_copies, [node()]},
-                                                  {attributes, record_info(fields, configuration)}]),
-    ok = ekka_mnesia:copy_table(configuration, disc_copies),
-    Config = application:get_env(?APP, storms, []),
-    ok = lists:foreach(fun add_default_config/1, Config),
-    StormOpts = storm_options(),
+    StormOpts = application:get_env(?APP, storms, []),
     Storm = [storm_spec(Opts) || Opts <- StormOpts],
     {ok, {SupFlags, Storm}}.
 
@@ -92,34 +87,3 @@ storm_spec({Name, Options}) ->
       shutdown => 5000,
       type     => worker,
       modules  => [emqx_storm]}.
-
--spec storm_options() -> ok.
-storm_options() ->
-    QueryOptions = fun() ->
-                       Q = qlc:q([{Config#configuration.id, Config#configuration.options } 
-                                  || Config <- mnesia:table(configuration)]),
-                       qlc:e(Q)
-                   end,
-    {atomic, Configs} = mnesia:transaction(QueryOptions),
-    Configs.
-
--spec add_default_config(DefaultConfig :: tuple()) -> ok | {error, any()}.
-add_default_config({Id, Options}) ->
-    add_config(Id, Options).
-
--spec add_config(Id :: atom() | list(), Options :: tuple()) -> ok | {error, any()}.
-add_config(Id, Options) ->
-    Config = #configuration{id = Id, options = Options},
-    return(mnesia:transaction(fun insert_config/1, [Config])).
-
--spec insert_config(Config :: configuration()) ->  ok | no_return().
-insert_config(Config = #configuration{id = Id}) ->
-    case mnesia:read(configuration, Id) of
-        [] -> mnesia:write(Config);
-        [_ | _] -> mnesia:abort(existed)
-    end.
-
--spec return(Args :: {atomic, ok} | {aborted, any()})
-            -> ok | {error, Error :: any()}.
-return({atomic, ok})     -> ok;
-return({aborted, Error}) -> {error, Error}.

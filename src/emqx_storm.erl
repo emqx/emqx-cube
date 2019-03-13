@@ -28,8 +28,7 @@
 %% gen_statem callbacks
 -export([callback_mode/0, init/1, terminate/3, code_change/4]).
 
--export([standing_by/3,
-         connecting/3,
+-export([connecting/3,
          connected/3]).
 
 -import(proplists, [get_value/3, delete/2]).
@@ -87,32 +86,9 @@ init(Config) ->
                                   uid], Config#{datasync => DataSync,
                                                 monitor => Monitor}),
     ConnectFun = fun() -> connect(ConnectConfig) end,
-    {ok, standing_by, #{connect_fun => ConnectFun,
+    {ok, connecting, #{connect_fun => ConnectFun,
                         reconnect_delay_ms => Get(reconnect_delay_ms , ?DEFAULT_RECONNECT_DELAY_MS),
                         uid => maps:get(uid, Config)}}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one function like this for each state name.
-%% Whenever a gen_statem receives an event, the function 
-%% with the name of the current state (StateName) 
-%% is called to handle the event.
-%% @end
-%%--------------------------------------------------------------------
--spec standing_by('enter',
-                 OldState :: atom(),
-                 Data :: term()) ->
-                        gen_statem:state_enter_result('standing_by');
-                (gen_statem:event_type(),
-                 Msg :: term(),
-                 Data :: term()) ->
-                        gen_statem:event_handler_result(atom()).
-%% @doc Standing by for manual start.
-standing_by(enter, _, State) ->
-    {next_state, connecting, State};
-standing_by(Type, Content, State) ->
-    common(standing_by, Type, Content, State).
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -239,13 +215,18 @@ make_msg_handler(DataSync, Monitor, ClientId, Parent, Ref) ->
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
 
-handle_msg(Msg = #{topic     := DataSyncTopic, 
-                   payload   := Payload,
-                   client_id := ClientId},
+handle_msg(#{topic     := DataSyncTopic, 
+             payload   := Payload,
+             client_id := ClientId},
            #{datasync := #{recv := DataSyncTopic,
                            send := RspTopic,
                            qos  := QoS}}) ->
-    ok;
+    DataSyncReq = emqx_json:safe_decode(Payload),
+    RspPayload = handle_monitor(DataSyncReq, ClientId),
+    RspMsg = #mqtt_msg{qos = QoS,
+                       topic = RspTopic,
+                       payload = RspPayload},
+    ok = send_response(RspMsg);
 handle_msg(#{topic     := MonitorTopic,
              payload   := Payload,
              client_id := ClientId},
@@ -283,11 +264,20 @@ send_response(Msg) ->
     ok.
 
 handle_datasync(DataSyncReq, ClientId) ->
-    ok.
+    Fun = b2a(get_value(<<"action">>, DataSyncReq, [])),
+    RawArgs = emqx_json:safe_encode(
+                get_value(<<"payload">>, DataSyncReq, []), 
+                [return_maps]),
+    Args = convert(RawArgs),
+    {ok, Result} = emqx_storm_datasync:Fun(Args),
+    Resp = return(maps:from_list(Result)),
+    restruct(Resp, DataSyncReq, ClientId).
 
 handle_monitor(MonitorReq, ClientId) ->
     Fun = b2a(get_value(<<"action">>, MonitorReq, [])),
-    RawArgs = emqx_json:safe_decode(get_value(<<"payload">>, MonitorReq, []), [return_maps]),
+    RawArgs = emqx_json:safe_decode(
+                get_value(<<"payload">>, MonitorReq, []),
+                [return_maps]),
     Args = convert(RawArgs),
     {ok, Result} = emqx_storm_monitor:Fun(Args),
     Resp = return(maps:from_list(Result)),

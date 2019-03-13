@@ -1,95 +1,54 @@
 %%-*- mode: erlang -*-
 %% emqx_storm config mapping
 
-{mapping, "storm.$name.address", "emqx_storm.storms", [
+{mapping, "storm.address", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.start_type", "emqx_storm.storms", [
-  {datatype, {enum, [manual, auto]}},
-  {default, auto}
-]}.
-
-{mapping, "storm.$name.ssl", "emqx_storm.storms", [
+{mapping, "storm.ssl", "emqx_storm", [
   {datatype, flag},
   {default, off}
 ]}.
 
-{mapping, "storm.$name.cacertfile", "emqx_storm.storms", [
+{mapping, "storm.cacertfile", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.certfile", "emqx_storm.storms", [
+{mapping, "storm.certfile", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.keyfile", "emqx_storm.storms", [
+{mapping, "storm.keyfile", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.ciphers", "emqx_storm.storms", [
+{mapping, "storm.ciphers", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.devicekey", "emqx_storm.storms", [
+{mapping, "storm.client_id", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.devicesecret", "emqx_storm.storms", [
+{mapping, "storm.password", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.clean_start", "emqx_storm.storms", [
-  {default, true},
-  {datatype, {enum, [true, false]}}
-]}.
-
-{mapping, "storm.$name.proto_ver", "emqx_storm.storms", [
-  {datatype, {enum, [mqttv3, mqttv4, mqttv5]}}
-]}.
-
-{mapping, "storm.$name.uid", "emqx_storm.storms", [
+{mapping, "storm.uid", "emqx_storm", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.$name.reconnect_interval", "emqx_storm.storms", [
+{mapping, "storm.reconnect_interval", "emqx_storm", [
   {default, "30s"},
   {datatype, {duration, ms}}
 ]}.
 
-{mapping, "storm.$name.retry_interval", "emqx_storm.storms", [
-  {default, "20s"},
-  {datatype, {duration, ms}}
-]}.
-
-{mapping, "storm.$name.max_inflight", "emqx_storm.storms", [
-  {default, 0},
-  {datatype, integer}
-]}.
-
-{mapping, "storm.$name.keepalive", "emqx_storm.storms", [
-  {default, "10s"},
-  {datatype, {duration, ms}}
-]}.
-
-{mapping, "storm.$name.tls_versions", "emqx_storm.storms", [
+{mapping, "storm.tls_versions", "emqx_storm", [
   {datatype, string},
   {default, "tlsv1,tlsv1.1,tlsv1.2"}
 ]}.
 
-{mapping, "storm.$name.topic.$duty.receive", "emqx_storm.storms", [
-  {datatype, string}
-]}.
-
-{mapping, "storm.$name.topic.$duty.send", "emqx_storm.storms", [
-  {datatype, string}
-]}.
-
-{mapping, "storm.$name.topic.$duty.qos", "emqx_storm.storms", [
-  {datatype, integer}
-]}.
-
-{translation, "emqx_storm.storms", fun(Conf) ->
+{translation, "emqx_storm", fun(Conf) ->
   Split = fun(undefined) -> undefined; (S) -> string:tokens(S, ",") end,
   IsSsl = fun(cacertfile)   -> true;
              (certfile)     -> true;
@@ -105,9 +64,7 @@
              (Opt, Val) ->
                   {Opt, Val}
           end,
-  Merge = fun(forwards, Val, Opts) ->
-                  [{forwards, string:tokens(Val, ",")}|Opts];
-             (Opt, Val, Opts) ->
+  Merge = fun(Opt, Val, Opts) ->
                   case IsSsl(Opt) of
                       true ->
                           SslOpts = [Parse(Opt, Val) | proplists:get_value(ssl_opts, Opts, [])],
@@ -116,46 +73,7 @@
                           [{Opt, Val}|Opts]
                   end
           end,
-  MergeInteraction = fun Merge ([Head1 | List1], [Head2 | List2], [Head3 | List3], Result) ->
-                             {Duty, recv, Receive} = Head1,
-                             {Duty, send, Send} = Head2,
-                             {Duty, qos, QoS} = Head3,
-                             NewResult = [{list_to_atom(Duty), [{recv, Receive}, {send, Send}, {qos, QoS}]} | Result],
-                             Merge(List1, List2, List3, NewResult);
-                         Merge ([], [], [], Result) ->
-                             Result
-                     end,
-  ParseTokens = fun PT(["${uid}"| RestTokens], Uid, DeviceKey, Acc0) ->
-                        PT(RestTokens, Uid, DeviceKey, [Uid ++ "/" | Acc0]);
-                    PT(["${devicekey}" | RestTokens], Uid, DeviceKey, Acc0) ->
-                        PT(RestTokens, Uid, DeviceKey, [DeviceKey | Acc0]);
-                    PT([], _Uid, _DeviceKey, Acc0)->
-                        lists:reverse(Acc0);
-                    PT([Token | RestTokens], Uid, DeviceKey, Acc0)->
-                        PT(RestTokens, Uid, DeviceKey, [Token ++ "/" | Acc0])
-                end,
-  
-  TransInteraction = fun(Interactions, Uid, DeviceKey) ->
-                         lists:foldl(fun({Duty, Items}, Acc) ->
-                                         RawTopic = proplists:get_value(recv, Items),
-                                         TokenList = string:tokens(RawTopic, "/"),
-                                         RealTopic = lists:flatten(ParseTokens(TokenList, Uid, DeviceKey, [])),
-                                         Items1 = proplists:delete(recv, Items),
-                                         [{Duty, [{recv, RealTopic} | Items1]} | Acc]
-                                     end, [], Interactions)
-                     end,
-  Interactions = fun(Name) ->
-                     Configs = cuttlefish_variable:filter_by_prefix("storm." ++ Name ++ ".topic", Conf),
-                     MergeInteraction([{Duty, recv, Receive} || {[_, _, "topic", Duty, "receive"], Receive} <- Configs],
-                                      [{Duty, send, Send} || {[_, _, "topic", Duty, "send"], Send} <- Configs],
-                                      [{Duty, qos, QoS} || {[_, _, "topic", Duty, "qos"], QoS} <- Configs], [])
-                 end,
-  Translate = fun Tr(devicekey, DeviceKey, Cfg) ->
-                      Cfg#{client_id => DeviceKey,
-                           username  => DeviceKey};
-                  Tr(devicesecret, DeviceSecret, Cfg) ->
-                      Cfg#{password => DeviceSecret};
-                  Tr(address, Address, Cfg) ->
+  Translate = fun Tr(address, Address, Cfg) ->
                       {Host, Port} = case string:tokens(Address, ":") of
                                          [H] -> {H, 1883};
                                          [H, P] -> {H, list_to_integer(P)}
@@ -163,32 +81,17 @@
                       Cfg#{host => Host, port => Port};
                   Tr(reconnect_interval, Ms, Cfg) ->
                       Cfg#{reconnect_delay_ms => Ms};
-                  Tr(proto_ver, Ver, Cfg) ->
-                      Cfg#{proto_ver => case Ver of
-                                            mqttv3 -> v3;
-                                            mqttv4 -> v4;
-                                            mqttv5 -> v5;
-                                            _ -> v4
-                                        end};
                   Tr(Key, Value, Cfg) ->
                       Cfg#{Key => Value}
               end,
-    C = lists:foldl(
-        fun({["storm", Name, Opt], Val}, Acc) ->
-                Init = [{list_to_atom(Opt), Val},
-                        {interaction, Interactions(Name)}],
-                maps:update_with(list_to_atom(Name), fun(Opts) -> Merge(list_to_atom(Opt), Val, Opts) end, Init, Acc);
+
+  C = lists:foldl(
+        fun({["storm", Opt], Val}, Acc) ->
+                Merge(list_to_atom(Opt), Val, Acc);
            (_, Acc) -> Acc
-        end, #{}, lists:usort(cuttlefish_variable:filter_by_prefix("storm.", Conf))),
-    C1 = maps:map(fun(Bn, Bc) ->
-                      Bc1 = maps:fold(Translate, #{}, maps:from_list(Bc)),
-                      Inters = maps:get(interaction, Bc1),
-                      DeviceKey = maps:get(client_id, Bc1),
-                      Uid = maps:get(uid, Bc1),
-                      NewInters = TransInteraction(Inters, Uid, DeviceKey),
-                          
-                      maps:to_list(maps:update(interaction, NewInters, Bc1))
-                          %% maps:to_list(maps:fold(Translate, #{}, maps:from_list(Bc)))
-                  end, C),
-    maps:to_list(C1)
+        end
+       , [], lists:usort(cuttlefish_variable:filter_by_prefix("storm.", Conf))),
+
+  C1 = maps:fold(Translate, #{}, maps:from_list(C)),
+  maps:to_list(C1)                                    
 end}.
