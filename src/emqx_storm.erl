@@ -215,20 +215,19 @@ handle_msg(#{topic     := DataSyncTopic,
              payload   := Payload},
            #{datasync := #{recv := DataSyncTopic,
                            send := RspTopic}}) ->
-    handle_request("datasync", DataSyncTopic, Payload, RspTopic);
+    handle_payload("datasync", DataSyncTopic, Payload, RspTopic);
 handle_msg(#{topic     := SysTopic,
              payload   := Payload},
            #{sys := #{recv := SysTopic,
                       send := RspTopic}}) ->
-    handle_request("sys", SysTopic, Payload, RspTopic);
+    handle_payload("sys", SysTopic, Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.
 
-handle_request(Type, ControlTopic, Payload, RspTopic) ->
+handle_payload(Type, ControlTopic, Payload, RspTopic) ->
     ClientId = get_clientid(ControlTopic),
     Req = emqx_json:safe_decode(Payload),
-    HandleFun = list_to_atom("handle_" ++ Type),
-    RspPayload = HandleFun(Req, ClientId),
+    RspPayload = handle_request(Type, Req, ClientId),
     RspMsg = make_resp_msg(RspTopic, RspPayload),
     ok = send_response(RspMsg).
 
@@ -253,25 +252,16 @@ send_response(Msg) ->
                    end),
     ok.
 
-handle_datasync(DataSyncReq, ClientId) ->
-    Fun = b2a(get_value(<<"action">>, DataSyncReq, [])),
+handle_request(Type, Req, ClientId) ->
+    Fun = b2a(get_value(<<"action">>, Req, [])),
     RawArgs = emqx_json:safe_encode(
-                get_value(<<"payload">>, DataSyncReq, []), 
+                get_value(<<"payload">>, Req, []), 
                 [return_maps]),
     Args = convert(RawArgs),
-    {ok, Result} = emqx_storm_datasync:Fun(Args),
+    Module = list_to_atom("emqx_storm_" ++ Type),
+    {ok, Result} = Module:Fun(Args),
     Resp = return(maps:from_list(Result)),
-    restruct(Resp, DataSyncReq, ClientId).
-
-handle_sys(MonitorReq, ClientId) ->
-    Fun = b2a(get_value(<<"action">>, MonitorReq, [])),
-    RawArgs = emqx_json:safe_decode(
-                get_value(<<"payload">>, MonitorReq, []),
-                [return_maps]),
-    Args = convert(RawArgs),
-    {ok, Result} = emqx_storm_monitor:Fun(Args),
-    Resp = return(maps:from_list(Result)),
-    restruct(Resp, sysReq, ClientId).
+    restruct(Resp, Req, ClientId).
 
 b2a(Data) ->
     binary_to_atom(Data, utf8).
