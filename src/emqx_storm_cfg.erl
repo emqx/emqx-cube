@@ -19,12 +19,14 @@
 
 -export([init/0,
          all_bridges/0,
+         start_bridge/1,
+         stop_bridge/1,
          add_bridge/2,
-         insert_bridge/1,
          update_bridge/2,
          do_update_bridge/1,
          remove_bridge/1,
          lookup_bridge/1,
+         bridge_status/0,
          ret/1]).
 
 init() ->
@@ -72,10 +74,33 @@ remove_bridge(Id) ->
     ret(mnesia:transaction(fun mnesia:delete/1, 
                            [{?TAB, Id}])).
 
+-spec(start_bridge(atom()) -> ok | {error, any()}).
+start_bridge(Id) ->
+    case lookup_bridge(Id) of
+        [{Id, Option}] ->
+            emqx_bridge_sup:create_bridge(Id, Option),
+            emqx_bridge:ensure_started(Id);
+        _ ->
+            ok
+    end.
+
+-spec(bridge_status() -> list()).
+bridge_status() ->
+    emqx_bridge_sup:bridges().
+
+-spec(stop_bridge(atom()) -> ok| {error, any()}).
+stop_bridge(Id) ->
+    emqx_bridge_sup:drop_bridge(Id).
+
 %% @doc Lookup bridge by id
 -spec(lookup_bridge(atom()) -> list()).
 lookup_bridge(Id) ->
-    mnesia:dirty_read(?TAB, Id).
+    case mnesia:dirty_read(?TAB, Id) of
+        [{?TAB, Id, Option}] ->
+            [{Id, Option}];
+        _ ->
+            []
+    end.
 
 -spec ret(Args :: {atomic, ok} | {aborted, any()})
             -> ok | {error, Error :: any()}.

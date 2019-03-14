@@ -20,31 +20,29 @@
 
 -export([list/1,
          update/1,
-         query/1,
-         create/1,
+         lookup/1,
+         add/1,
          start/1,
          stop/1,
-         delete/1]).
+         status/1]).
 
-list(#{ := Id}) ->
-    ok;
-list(#{}) ->
-    ok.
+list(_Bindings) ->
+    {ok, emqx_storm_cfg:all_bridges()}.
 
-update(A) ->
-    ok.
+update(#{id := Id, options := Options}) ->
+    emqx_storm_cfg:update_bridge(Id, Options).
 
-query(A) ->
-    ok.
+lookup(#{id := Id}) ->
+    emqx_storm_cfg:lookup_bridge(Id).
 
-create(A) ->
-    ok.
+add(#{id := Id, options := Options}) ->
+    emqx_storm_cfg:add_bridge(Id, Options).
 
-start(A) ->
-    ok.
+start(#{id := Id}) ->
+    emqx_storm_cfg:start_bridge(Id).
 
-stop(A) ->
-    ok.
+stop(#{id := Id}) ->
+    emqx_storm_cfg:stop_bridge(Id).
 
-delete(A) ->
-    ok.
+status(_Bindings) ->
+    emqx_storm_cfg:bridge_status().

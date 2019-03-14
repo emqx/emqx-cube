@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(emqx_storm_monitor).
+-module(emqx_storm_sys).
 
 -export([nodes/1, stats/1, metrics/1, connections/1, sessions/1, topics/1, subscriptions/1]).
 

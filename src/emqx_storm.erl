@@ -80,17 +80,13 @@ init(Config) ->
     GetD = fun(K, D) -> maps:get(K, Config, D) end,
     Get = fun(K) -> maps:get(K, Config) end,
     ClientId = list_to_binary(Get(client_id)),
-    DataSync = #{recv => <<"sys/control/", ClientId/binary>>,
-                 snd => <<"sys/ack/", ClientId/binary>>},
-    Sys = #{recv => <<"sys/control/", ClientId/binary>>,
-            snd => <<"sys/ack/", ClientId/binary>>},
     ConnectConfig = maps:without([reconnect_delay_ms], 
-                                 Config#{datasync => DataSync,
-                                         sys => Sys}),
+                                 Config#{recv => <<"storm/control/", ClientId/binary>>,
+                                         snd => <<"storm/ack/", ClientId/binary>>}),
     ConnectFun = fun() -> connect(ConnectConfig) end,
     {ok, connecting, #{connect_fun => ConnectFun,
                        reconnect_delay_ms => GetD(reconnect_delay_ms, 
-                                                 ?DEFAULT_RECONNECT_DELAY_MS)}}.
+                                                  ?DEFAULT_RECONNECT_DELAY_MS)}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -125,7 +121,7 @@ connected(info, {disconnected, ConnRef, Reason},
             conn_pid := ConnPid} = State) ->
     case ConnRefCurrent =:= ConnRef of
         true ->
-            ?LOG(info, "Storm ~p diconnected~nreason=~p", [name(), ConnPid, Reason]),
+            ?LOG(info, "Storm ~p diconnected ~n reason=~p", [name(), ConnPid, Reason]),
             {next_state, connecting,
              State#{conn_ref := undefined, connection := undefined}};
         false ->
@@ -171,16 +167,13 @@ code_change(_OldVsn, State, Data, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-connect(Config = #{datasync  := DataSync, 
-                   sys       := Sys}) ->
+connect(Config = #{recv := Recv,
+                   snd  := Snd}) ->
     Ref = make_ref(),
     Parent = self(),
-    Handlers = make_msg_handler(DataSync, Sys, Parent, Ref),
-    GetS = fun(K, V) -> maps:get(K, V) end,
-    Subs = [{GetS(recv, DataSync), 1},
-            {GetS(recv, Sys), 1}],
-    ConnectConfig = maps:without([datasync, sys], 
-                                 Config#{subscriptions => Subs,
+    Handlers = make_msg_handler(Snd, Parent, Ref),
+    ConnectConfig = maps:without([recv, snd],
+                                 Config#{subscriptions => [{Recv, 1}],
                                          msg_handler => Handlers}),
     case emqx_client:start_link(ConnectConfig) of
         {ok, Pid} ->
@@ -203,31 +196,25 @@ name() -> {_, Name} = process_info(self(), registered_name), Name.
 
 name(Id) -> list_to_atom(lists:concat([?MODULE, "_", Id])).
 
-make_msg_handler(DataSync, Sys, Parent, Ref) ->
+make_msg_handler(Snd, Parent, Ref) ->
     #{publish => fun(Msg) -> 
-                         handle_msg(Msg, #{datasync  => DataSync,
-                                           sys       => Sys}) 
+                         handle_msg(Msg, #{snd => Snd})
                  end,
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
 
-handle_msg(#{topic     := DataSyncTopic, 
+handle_msg(#{topic     := ControlTopic,
              payload   := Payload},
-           #{datasync := #{recv := DataSyncTopic,
-                           send := RspTopic}}) ->
-    handle_payload("datasync", DataSyncTopic, Payload, RspTopic);
-handle_msg(#{topic     := SysTopic,
-             payload   := Payload},
-           #{sys := #{recv := SysTopic,
-                      send := RspTopic}}) ->
-    handle_payload("sys", SysTopic, Payload, RspTopic);
+           #{recv := ControlTopic,
+             snd  := RspTopic}) ->
+    handle_payload(ControlTopic, Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.
 
-handle_payload(Type, ControlTopic, Payload, RspTopic) ->
+handle_payload(ControlTopic, Payload, RspTopic) ->
     ClientId = get_clientid(ControlTopic),
     Req = emqx_json:safe_decode(Payload),
-    RspPayload = handle_request(Type, Req, ClientId),
+    RspPayload = handle_request(Req, ClientId),
     RspMsg = make_resp_msg(RspTopic, RspPayload),
     ok = send_response(RspMsg).
 
@@ -252,10 +239,11 @@ send_response(Msg) ->
                    end),
     ok.
 
-handle_request(Type, Req, ClientId) ->
+handle_request(Req, ClientId) ->
+    Type = b2l(get_value(<<"type">>, Req, [])),
     Fun = b2a(get_value(<<"action">>, Req, [])),
     RawArgs = emqx_json:safe_encode(
-                get_value(<<"payload">>, Req, []), 
+                get_value(<<"payload">>, Req, []),
                 [return_maps]),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
@@ -265,6 +253,9 @@ handle_request(Type, Req, ClientId) ->
 
 b2a(Data) ->
     binary_to_atom(Data, utf8).
+
+b2l(Data) ->
+    binary_to_list(Data).
 
 convert(RawArgs) when is_list(RawArgs) ->
     convert(RawArgs, []).
