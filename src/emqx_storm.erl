@@ -173,8 +173,8 @@ connect(Config = #{recv := Recv,
     Parent = self(),
     Handlers = make_msg_handler(Snd, Parent, Ref),
     ConnectConfig = maps:without([recv, snd],
-                                 Config#{subscriptions => [{Recv, 1}],
-                                         msg_handler => Handlers}),
+                                 Config#{msg_handler => Handlers}),
+    Subs = [{Recv, 1}],
     case emqx_client:start_link(ConnectConfig) of
         {ok, Pid} ->
             case emqx_client:connect(Pid) of
@@ -207,15 +207,14 @@ handle_msg(#{topic     := ControlTopic,
              payload   := Payload},
            #{recv := ControlTopic,
              snd  := RspTopic}) ->
-    handle_payload(ControlTopic, Payload, RspTopic);
+    handle_payload(Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.
 
-handle_payload(ControlTopic, Payload, RspTopic) ->
-    ClientId = get_clientid(ControlTopic),
+handle_payload(Payload, RspTopic) ->
     Req = emqx_json:safe_decode(Payload),
-    RspPayload = handle_request(Req, ClientId),
-    RspMsg = make_resp_msg(RspTopic, RspPayload),
+    RspPayload = handle_request(Req),
+    RspMsg = make_rsp_msg(RspTopic, RspPayload),
     ok = send_response(RspMsg).
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
@@ -239,7 +238,7 @@ send_response(Msg) ->
                    end),
     ok.
 
-handle_request(Req, ClientId) ->
+handle_request(Req) ->
     Type = b2l(get_value(<<"type">>, Req, [])),
     Fun = b2a(get_value(<<"action">>, Req, [])),
     RawArgs = emqx_json:safe_encode(
@@ -248,8 +247,8 @@ handle_request(Req, ClientId) ->
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
     {ok, Result} = Module:Fun(Args),
-    Resp = return(maps:from_list(Result)),
-    restruct(Resp, Req, ClientId).
+    Rsp = return(maps:from_list(Result)),
+    restruct(Rsp, Req).
 
 b2a(Data) ->
     binary_to_atom(Data, utf8).
@@ -271,24 +270,20 @@ return(#{code := Code, data := Data}) ->
     [{code, Code}, {payload, Data}];
 return(#{code := Code, message := Message}) ->
     [{code, Code}, {payload, Message}];
-return(#{code := Code, data := Data, meta := Meta}) ->
-    [{code, Code}, {payload, Data}, {meta, Meta}].
+return(_Map) ->
+    [{code, 404, {payload, <<"Not found">>}}].
 
-restruct(Resp, Req, ClientId) ->
-    RespKeys = proplists:get_keys(Resp),
-    Req1 = delete_by_keys(RespKeys, Req),
-    Req1 ++ Resp ++ [{client_id, ClientId}].
+restruct(Resp, Req) ->
+    RspKeys = proplists:get_keys(Resp),
+    Req1 = delete_by_keys(RspKeys, Req),
+    Req1 ++ Resp.
 
 delete_by_keys([], Req) ->
     Req;
 delete_by_keys([Key | LeftKeys], Req) ->
     delete_by_keys(LeftKeys, delete(Key, Req)).
 
-make_resp_msg(Topic, Payload) ->
+make_rsp_msg(Topic, Payload) ->
     #mqtt_msg{qos = 1,
               topic = Topic,
               payload = Payload}.
-
-get_clientid(Topic) ->
-    Tokens = emqx_topic:tokens(Topic),
-    lists:last(Tokens).
