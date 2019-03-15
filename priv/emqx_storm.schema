@@ -1,0 +1,97 @@
+%%-*- mode: erlang -*-
+%% emqx_storm config mapping
+
+{mapping, "storm.address", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.ssl", "emqx_storm", [
+  {datatype, flag},
+  {default, off}
+]}.
+
+{mapping, "storm.cacertfile", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.certfile", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.keyfile", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.ciphers", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.client_id", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.password", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.uid", "emqx_storm", [
+  {datatype, string}
+]}.
+
+{mapping, "storm.reconnect_interval", "emqx_storm", [
+  {default, "30s"},
+  {datatype, {duration, ms}}
+]}.
+
+{mapping, "storm.tls_versions", "emqx_storm", [
+  {datatype, string},
+  {default, "tlsv1,tlsv1.1,tlsv1.2"}
+]}.
+
+{translation, "emqx_storm", fun(Conf) ->
+  Split = fun(undefined) -> undefined; (S) -> string:tokens(S, ",") end,
+  IsSsl = fun(cacertfile)   -> true;
+             (certfile)     -> true;
+             (keyfile)      -> true;
+             (ciphers)      -> true;
+             (tls_versions) -> true;
+             (_Opt)         -> false
+          end,
+  Parse = fun(tls_versions, Vers) ->
+                  {versions, [list_to_atom(S) || S <- Split(Vers)]};
+             (ciphers, Ciphers) ->
+                  {ciphers, Split(Ciphers)};
+             (Opt, Val) ->
+                  {Opt, Val}
+          end,
+  Merge = fun(Opt, Val, Opts) ->
+                  case IsSsl(Opt) of
+                      true ->
+                          SslOpts = [Parse(Opt, Val) | proplists:get_value(ssl_opts, Opts, [])],
+                          lists:ukeymerge(1, [{ssl_opts, SslOpts}], lists:usort(Opts));
+                      false ->
+                          [{Opt, Val}|Opts]
+                  end
+          end,
+  Translate = fun Tr(address, Address, Cfg) ->
+                      {Host, Port} = case string:tokens(Address, ":") of
+                                         [H] -> {H, 1883};
+                                         [H, P] -> {H, list_to_integer(P)}
+                                     end,
+                      Cfg#{host => Host, port => Port};
+                  Tr(reconnect_interval, Ms, Cfg) ->
+                      Cfg#{reconnect_delay_ms => Ms};
+                  Tr(Key, Value, Cfg) ->
+                      Cfg#{Key => Value}
+              end,
+
+  C = lists:foldl(
+        fun({["storm", Opt], Val}, Acc) ->
+                Merge(list_to_atom(Opt), Val, Acc);
+           (_, Acc) -> Acc
+        end
+       , [], lists:usort(cuttlefish_variable:filter_by_prefix("storm.", Conf))),
+
+  C1 = maps:fold(Translate, #{}, maps:from_list(C)),
+  maps:to_list(C1)                                    
+end}.
