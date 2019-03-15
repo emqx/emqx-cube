@@ -33,9 +33,8 @@ all() ->
 groups() ->
     [{emqx_storm, [sequence],
       [
-       %% emqx_storm_datasync_t
+       emqx_storm_datasync_t
        %% emqx_storm_sys_t,
-       emqx_storm_cfg_t
       ]}].
 
 init_per_suite(Config) ->
@@ -54,28 +53,31 @@ end_per_suite(_Config) ->
     application:stop(emqx_management),
     application:stop(emqx).
 
-emqx_storm_datasync_t(_Config) ->
-    ok.
-
 emqx_storm_sys_t(_Config) ->
+    
     ok.
 
-emqx_storm_cfg_t(_Config) ->
-    ?assertEqual([], emqx_storm_cfg:all_bridges()),
-    lists:foreach(fun({Id, Option}) ->
-                          emqx_storm_cfg:add_bridge(Id, Option)
+emqx_storm_datasync_t(_Config) ->
+    ?assertEqual({ok, []}, emqx_storm_datasync:list()),
+    lists:foreach(fun({Id, Options}) ->
+                          emqx_storm_datasync:add(#{id => Id,
+                                                    options => Options})
                   end, ?BRIDGES),
-    ?assertEqual(3, length(emqx_storm_cfg:all_bridges())),
-    emqx_storm_cfg:update_bridge(bridge1, [{address, "127.0.0.4"}]),
+    Parse= fun() -> 
+                   {ok, Bridges} = GetValue(Args),
+                   Bridges
+           end.
+    ?assertEqual(3, length(emqx_storm_datasync:all_bridges())),
+    emqx_storm_datasync:update_bridge(bridge1, [{address, "127.0.0.4"}]),
     ?assertEqual({bridge1, [{address, "127.0.0.4"}]},
-                 emqx_storm_cfg:lookup_bridge(bridge1)),
-    emqx_storm_cfg:remove_bridge(bridge3),
-    ?assertEqual(2, length(emqx_storm_cfg:all_bridges())),
-    emqx_storm_cfg:add_bridge(test, bridge_spec()),
-    emqx_storm_cfg:start_bridge(test),
-    ?assertEqual([{test, connected}], emqx_storm_cfg:bridge_status()),
-    emqx_storm_cfg:stop_bridge(test),
-    ?assertEqual([], emqx_storm_cfg:bridge_status()),
+                 emqx_storm_datasync:lookup(#{id => bridge1})),
+    emqx_storm_datasync:remove_bridge(bridge3),
+    ?assertEqual(2, length(emqx_storm_datasync:all_bridges())),
+    emqx_storm_datasync:add_bridge(test, bridge_spec()),
+    emqx_storm_datasync:start_bridge(test),
+    ?assertEqual([{test, connected}], emqx_storm_datasync:bridge_status()),
+    emqx_storm_datasync:stop_bridge(test),
+    ?assertEqual([], emqx_storm_datasync:bridge_status()),
     ok.
 
 bridge_spec() ->

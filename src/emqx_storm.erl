@@ -75,18 +75,12 @@ callback_mode() -> [state_functions, state_enter].
 %%--------------------------------------------------------------------
 -spec init(Args :: term()) ->
                   gen_statem:init_result(atom()).
-init(Config) ->
+init(Config = #{client_id := ClientId}) ->
     process_flag(trap_exit, true),
-    GetD = fun(K, D) -> maps:get(K, Config, D) end,
-    Get = fun(K) -> maps:get(K, Config) end,
-    ClientId = list_to_binary(Get(client_id)),
-    ConnectConfig = maps:without([reconnect_delay_ms], 
-                                 Config#{recv => <<"storm/control/", ClientId/binary>>,
-                                         snd => <<"storm/ack/", ClientId/binary>>}),
-    ConnectFun = fun() -> connect(ConnectConfig) end,
-    {ok, connecting, #{connect_fun => ConnectFun,
-                       reconnect_delay_ms => GetD(reconnect_delay_ms, 
-                                                  ?DEFAULT_RECONNECT_DELAY_MS)}}.
+    Get = fun(K, D) -> maps:get(K, Config, D) end,
+    {ok, connecting, Config#{reconnect_delay_ms := Get(reconnect_delay_ms, ?DEFAULT_RECONNECT_DELAY_MS),
+                             control_topic => <<"storm/control/", ClientId/binary>>,
+                             ack_topic => <<"storm/ack/", ClientId/binary>>}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -94,9 +88,9 @@ init(Config) ->
 connecting(enter, connected, #{reconnect_delay_ms := Timeout}) ->
     Action = {state_timeout, Timeout, reconnect},
     {keep_state_and_data, Action};
-connecting(enter, _, #{reconnect_delay_ms := Timeout,
-                       connect_fun := ConnectFun} = State) ->
-    case ConnectFun() of
+connecting(enter, _, #{reconnect_delay_ms := Timeout} = State) ->
+    ConnectConfig = maps:without([reconnect_delay_ms], State),
+    case connect(ConnectConfig) of
         {ok, ConnRef, ConnPid} ->
             ?LOG(info, "Storm ~p connected", [name()]),
             Action = {state_timeout, 0, connected},
@@ -167,12 +161,12 @@ code_change(_OldVsn, State, Data, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-connect(Config = #{recv := Recv,
-                   snd  := Snd}) ->
+connect(Config = #{control_topic := Recv,
+                   ack_topic  := Snd}) ->
     Ref = make_ref(),
     Parent = self(),
     Handlers = make_msg_handler(Snd, Parent, Ref),
-    ConnectConfig = maps:without([recv, snd],
+    ConnectConfig = maps:without([control_topic, ack_topic],
                                  Config#{msg_handler => Handlers}),
     Subs = [{Recv, 1}],
     case emqx_client:start_link(ConnectConfig) of
@@ -198,15 +192,15 @@ name(Id) -> list_to_atom(lists:concat([?MODULE, "_", Id])).
 
 make_msg_handler(Snd, Parent, Ref) ->
     #{publish => fun(Msg) -> 
-                         handle_msg(Msg, #{snd => Snd})
+                         handle_msg(Msg, #{ack_topic => Snd})
                  end,
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
 
 handle_msg(#{topic     := ControlTopic,
              payload   := Payload},
-           #{recv := ControlTopic,
-             snd  := RspTopic}) ->
+           #{control_topic := ControlTopic,
+             ack_topic  := RspTopic}) ->
     handle_payload(Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.

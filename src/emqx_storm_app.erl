@@ -39,7 +39,6 @@
                    {ok, Pid :: pid(), State :: term()} |
                    {error, Reason :: term()}.
 start(_StartType, _StartArgs) ->
-    emqx_storm_cfg:init(),
     emqx_storm_sup:start_link().
 %%--------------------------------------------------------------------
 %% @private
