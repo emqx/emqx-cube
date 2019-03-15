@@ -235,14 +235,13 @@ send_response(Msg) ->
 handle_request(Req) ->
     Type = b2l(get_value(<<"type">>, Req, [])),
     Fun = b2a(get_value(<<"action">>, Req, [])),
-    RawArgs = emqx_json:safe_encode(
-                get_value(<<"payload">>, Req, []),
-                [return_maps]),
+    RawArgs = emqx_json:safe_decode(
+                get_value(<<"payload">>, Req, [])),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
     {ok, Result} = Module:Fun(Args),
     Rsp = return(maps:from_list(Result)),
-    restruct(Rsp, Req).
+    emqx_json:encode(restruct(Rsp, Req)).
 
 b2a(Data) ->
     binary_to_atom(Data, utf8).

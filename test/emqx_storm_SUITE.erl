@@ -33,10 +33,9 @@ all() ->
 
 groups() ->
     [{emqx_storm, [sequence],
-      [
+      [storm_t,
        datasync_t,
-       sys_t
-      ]}].
+       sys_t]}].
 
 init_per_suite(Config) ->
     application:load(emqx_storm),
@@ -52,6 +51,9 @@ init_per_suite(Config) ->
 
 end_per_suite(_Config) ->
     [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]].
+
+storm_t(_Config) ->
+    ok.
 
 sys_t(_Config) ->
     Param = #{node => node()},
