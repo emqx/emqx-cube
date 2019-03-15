@@ -33,8 +33,8 @@ all() ->
 groups() ->
     [{emqx_storm, [sequence],
       [
-       datasync_t
-       %% emqx_storm_sys_t,
+       datasync_t,
+       sys_t
       ]}].
 
 init_per_suite(Config) ->
@@ -53,23 +53,38 @@ end_per_suite(_Config) ->
     [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]].
 
 sys_t(_Config) ->
+    Param = #{node => node()},
+    lists:foreach(fun(Value) ->
+                          assertmatch_sys_t(Value)
+                  end,
+                  [emqx_storm_sys:nodes(Param),
+                   emqx_storm_sys:stats(Param),
+                   emqx_storm_sys:metrics(Param),
+                   {meta, emqx_storm_sys:connections(Param#{page => <<"1">>, limit => <<"15">>})},
+                   {meta, emqx_storm_sys:connections(#{})},
+                   {meta, emqx_storm_sys:sessions(Param#{page => <<"1">>, limit => <<"15">>})},
+                   {meta, emqx_storm_sys:sessions(#{})},
+                   {meta, emqx_storm_sys:topics(Param#{page => <<"1">>, limit => <<"20">>})},
+                   {meta, emqx_storm_sys:topics(#{})},
+                   {meta, emqx_storm_sys:subscriptions(Param#{page => <<"1">>, limit => <<"15">>})},
+                   {meta, emqx_storm_sys:subscriptions(#{})}]),
     ok.
+assertmatch_sys_t({meta, Value}) ->
+    ?assertMatch({ok, [{code, 0}, {data, _Data}, {meta, _Meta}]}, Value);
+assertmatch_sys_t(Value) ->
+    ?assertMatch({ok, [{code, 0}, {data, _Data}]}, Value).
+
+log(Key, Value) ->
+    ct:log("~p : [~p]", [Key, Value]).
 
 datasync_t(_Config) ->
-    dbg:start(),
-    dbg:tracer(),
-    dbg:p(all, c),
-    dbg:tpl(emqx_storm_datasync, add_bridge, x),
     ?assertEqual({ok, []}, emqx_storm_datasync:list(#{})),
     lists:foreach(fun({Id, Options}) ->
                           emqx_storm_datasync:add(#{id => Id,
                                                     options => Options})
                   end, ?BRIDGES),
     ct:log("~p", [ets:tab2list(bridges)]),
-    Parse= fun({ok, Value}) ->
-                   ct:log("~p", [Value]),
-                   Value
-           end,
+    Parse= fun({ok, Value}) -> Value end,
     ?assertEqual(3, length(Parse(emqx_storm_datasync:list(#{})))),
     emqx_storm_datasync:update(#{id => bridge1,
                                  options => [{address, "127.0.0.4"}]}),

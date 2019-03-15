@@ -1,6 +1,5 @@
 PROJECT = emqx_storm
 PROJECT_DESCRIPTION = EMQ X Storm
-PROJECT_VERSION = 3.0
 
 NO_AUTOPATCH = cuttlefish
 
