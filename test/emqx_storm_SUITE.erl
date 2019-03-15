@@ -18,6 +18,7 @@
 -compile(nowarn_export_all).
 
 -include_lib("emqx/include/emqx.hrl").
+-include_lib("emqx_management/include/emqx_mgmt.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("common_test/include/ct.hrl").
 
@@ -69,22 +70,27 @@ sys_t(_Config) ->
                    {meta, emqx_storm_sys:subscriptions(Param#{page => <<"1">>, limit => <<"15">>})},
                    {meta, emqx_storm_sys:subscriptions(#{})}]),
     ok.
+
 assertmatch_sys_t({meta, Value}) ->
     ?assertMatch({ok, [{code, 0}, {data, _Data}, {meta, _Meta}]}, Value);
 assertmatch_sys_t(Value) ->
     ?assertMatch({ok, [{code, 0}, {data, _Data}]}, Value).
 
-log(Key, Value) ->
-    ct:log("~p : [~p]", [Key, Value]).
-
 datasync_t(_Config) ->
-    ?assertEqual({ok, []}, emqx_storm_datasync:list(#{})),
+    %% dbg:start(),
+    %% dbg:tracer(),
+    %% dbg:p(all, c),
+    %% dbg:tpl(emqx_storm_datasync, add, x),
+    Parse= fun({ok, ValueList}) ->
+                   %% ct:log("~p", [ValueList]),
+                   proplists:get_value(data, ValueList)
+           end,
+    ?assertEqual([], Parse(emqx_storm_datasync:list(#{}))),
     lists:foreach(fun({Id, Options}) ->
                           emqx_storm_datasync:add(#{id => Id,
                                                     options => Options})
                   end, ?BRIDGES),
-    ct:log("~p", [ets:tab2list(bridges)]),
-    Parse= fun({ok, Value}) -> Value end,
+    %% ct:log("~p", [ets:tab2list(bridges)]),
     ?assertEqual(3, length(Parse(emqx_storm_datasync:list(#{})))),
     emqx_storm_datasync:update(#{id => bridge1,
                                  options => [{address, "127.0.0.4"}]}),
@@ -93,7 +99,9 @@ datasync_t(_Config) ->
     emqx_storm_datasync:delete(#{id => bridge3}),
     ?assertEqual(2, length(Parse(emqx_storm_datasync:list(#{})))),
     emqx_storm_datasync:add(#{id => test, options => bridge_spec()}),
+    ct:log("All bridges: ~p", [emqx_storm_datasync:list(#{})]),
     emqx_storm_datasync:start(#{id => test}),
+    ct:log("~p", [emqx_storm_datasync:status(#{})]),
     ?assertEqual([{test, connected}], Parse(emqx_storm_datasync:status(#{}))),
     emqx_storm_datasync:stop(#{id => test}),
     ?assertEqual([], Parse(emqx_storm_datasync:status(#{}))),

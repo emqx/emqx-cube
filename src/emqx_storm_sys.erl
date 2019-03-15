@@ -14,7 +14,13 @@
 
 -module(emqx_storm_sys).
 
--export([nodes/1, stats/1, metrics/1, connections/1, sessions/1, topics/1, subscriptions/1]).
+-export([nodes/1,
+         stats/1,
+         metrics/1,
+         connections/1,
+         sessions/1,
+         topics/1,
+         subscriptions/1]).
 
 nodes(Bindings = #{node := _Node}) ->
     emqx_mgmt_api_nodes:get(Bindings, params);

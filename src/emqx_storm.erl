@@ -260,17 +260,17 @@ convert([{K, V} | RestProps], Acc) ->
 
 return(#{code := Code}) ->
     [{code, Code}, {payload, <<>>}];
+return(#{code := Code, data := Data}) when is_map(Data) ->
+    [{code, Code}, {payload, maps:to_list(Data)}];
 return(#{code := Code, data := Data}) ->
     [{code, Code}, {payload, Data}];
-return(#{code := Code, message := Message}) ->
-    [{code, Code}, {payload, Message}];
 return(_Map) ->
     [{code, 404, {payload, <<"Not found">>}}].
 
 restruct(Resp, Req) ->
     RspKeys = proplists:get_keys(Resp),
     Req1 = delete_by_keys(RspKeys, Req),
-    Req1 ++ Resp.
+    lists:append(Req1, Resp).
 
 delete_by_keys([], Req) ->
     Req;

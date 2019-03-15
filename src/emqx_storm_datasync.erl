@@ -14,13 +14,19 @@
 
 -module(emqx_storm_datasync).
 
+-define(NO_BRIDGE, undefined).
+
 -include("emqx_storm.hrl").
 -include_lib("emqx/include/emqx_mqtt.hrl").
 -include_lib("emqx/include/logger.hrl").
+-include_lib("emqx_management/include/emqx_mgmt.hrl").
 -include_lib("stdlib/include/qlc.hrl").
 
+-ifdef(TEST).
+-compile(export_all).
+-compile(nowarn_export_all).
+-else.
 -export([mnesia/1]).
-
 -export([list/1,
          update/1,
          lookup/1,
@@ -29,6 +35,7 @@
          start/1,
          stop/1,
          status/1]).
+-endif.
 
 -boot_mnesia({mnesia, [boot]}).
 -copy_mnesia({mnesia, [copy]}).
@@ -50,13 +57,19 @@ mnesia(copy) ->
     ok = ekka_mnesia:copy_table(?TAB).
 
 list(_Bindings) ->
-    {ok, all_bridges()}.
+    all_bridges().
 
 update(#{id := Id, options := Options}) ->
     update_bridge(Id, Options).
 
 lookup(#{id := Id}) ->
-    {ok, lookup_bridge(Id)}.
+    {ok, case lookup_bridge(Id) of
+             ?NO_BRIDGE ->
+                 [{code, ?ERROR2}];
+             Bridge ->
+                 [{code, ?SUCCESS},
+                  {data, Bridge}]
+         end}.
 
 add(#{id := Id, options := Options}) ->
     add_bridge(Id, Options).
@@ -71,14 +84,21 @@ stop(#{id := Id}) ->
     stop_bridge(Id).
 
 status(_Bindings) ->
-    {ok, bridge_status()}.
+    bridge_status().
 
 -spec(all_bridges() -> list()).
 all_bridges() -> 
-    ets:tab2list(?TAB).
+    try ets:tab2list(?TAB) of
+        Result -> 
+            {ok, [{code, ?SUCCESS},
+                  {data, Result}]}
+    catch
+        _Error:_Reason ->
+            {ok, [{code, ?ERROR2}]}
+    end.
 
 -spec add_bridge(Id :: atom() | list(), Options :: tuple()) 
-                -> ok | {error, any()}.
+                -> {ok, list()}.
 add_bridge(Id, Options) ->
     Config = #?TAB{id = Id, options = Options},
     ret(mnesia:transaction(fun insert_bridge/1, [Config])).
@@ -90,7 +110,7 @@ insert_bridge(Bridge = #?TAB{id = Id}) ->
         [_ | _] -> mnesia:abort(existed)
     end.
 
--spec(update_bridge(atom(), list()) -> ok | {error, any()}).
+-spec(update_bridge(atom(), list()) -> {ok, list()}).
 update_bridge(Id, Options) ->
     Bridge = #?TAB{id = Id, options = Options},
     ret(mnesia:transaction(fun do_update_bridge/1, [Bridge])).
@@ -106,35 +126,55 @@ remove_bridge(Id) ->
     ret(mnesia:transaction(fun mnesia:delete/1, 
                            [{?TAB, Id}])).
 
--spec(start_bridge(atom()) -> ok | {error, any()}).
+-spec(start_bridge(atom()) -> {ok, list()}).
 start_bridge(Id) ->
-    case lookup_bridge(Id) of
-        {Id, Option} ->
-            emqx_bridge_sup:create_bridge(Id, Option),
-            emqx_bridge:ensure_started(Id);
-        _ ->
-            {error, bridge_not_found}
-    end.
+    {ok, case lookup_bridge(Id) of
+             {Id, Option} ->
+                 emqx_bridge_sup:create_bridge(Id, Option),
+                 try emqx_bridge:ensure_started(Id) of
+                     ok -> [{code, ?SUCCESS},
+                            {data, <<"Start bridge successfully">>}];
+                     connected -> [{code, ?SUCCESS},
+                                   {data, <<"Bridge already started">>}];
+                     _ -> [{code, ?ERROR2},
+                           {data, <<"Start bridge failed">>}]
+                 catch
+                     _Error:_Reason ->
+                         [{code, ?ERROR2},
+                          {data, <<"Start bridge failed">>}]
+                 end;
+             _ ->
+                 [{code, ?ERROR2},
+                  {data, <<"bridge_not_found">>}]
+         end}.
 
 -spec(bridge_status() -> list()).
 bridge_status() ->
-    emqx_bridge_sup:bridges().
+    {ok, [{code, ?SUCCESS},
+          {data, emqx_bridge_sup:bridges()}]}.
 
 -spec(stop_bridge(atom()) -> ok| {error, any()}).
 stop_bridge(Id) ->
-    emqx_bridge_sup:drop_bridge(Id).
+    {ok, case emqx_bridge_sup:drop_bridge(Id) of
+             ok -> 
+                 [{code, ?SUCCESS},
+                  {data, <<"stop bridge successfully">>}];
+             _Error -> 
+                 [{code, ?ERROR2},
+                  {data, <<"stop bridge failed">>}]
+         end}.
 
 %% @doc Lookup bridge by id
--spec(lookup_bridge(atom()) -> tuple()).
+-spec(lookup_bridge(atom()) -> tuple() | ?NO_BRIDGE).
 lookup_bridge(Id) ->
     case mnesia:dirty_read(?TAB, Id) of
         [{?TAB, Id, Option}] ->
             {Id, Option};
         _ ->
-            []
+            ?NO_BRIDGE
     end.
 
 -spec ret(Args :: {atomic, ok} | {aborted, any()})
-            -> ok | {error, Error :: any()}.
-ret({atomic, ok})     -> ok;
-ret({aborted, Error}) -> {error, Error}.
+            -> {ok, list()}.
+ret({atomic, ok})     -> {ok, [{code, ?SUCCESS}]};
+ret({aborted, Error}) -> {ok, [{code, ?ERROR2}, {data, Error}]}.
