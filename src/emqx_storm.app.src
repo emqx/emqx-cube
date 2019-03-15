@@ -1,6 +1,6 @@
 {application,emqx_storm,
              [{description,"EMQ X Edge Storm plugin"},
-              {vsn, "3.0"},
+              {vsn, git},
               {modules,[]},
               {registered,[]},
               {applications, [kernel, stdlib]},

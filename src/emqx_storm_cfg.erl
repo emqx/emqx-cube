@@ -77,7 +77,7 @@ remove_bridge(Id) ->
 -spec(start_bridge(atom()) -> ok | {error, any()}).
 start_bridge(Id) ->
     case lookup_bridge(Id) of
-        [{Id, Option}] ->
+        {Id, Option} ->
             emqx_bridge_sup:create_bridge(Id, Option),
             emqx_bridge:ensure_started(Id);
         _ ->
@@ -93,11 +93,11 @@ stop_bridge(Id) ->
     emqx_bridge_sup:drop_bridge(Id).
 
 %% @doc Lookup bridge by id
--spec(lookup_bridge(atom()) -> list()).
+-spec(lookup_bridge(atom()) -> tuple()).
 lookup_bridge(Id) ->
     case mnesia:dirty_read(?TAB, Id) of
         [{?TAB, Id, Option}] ->
-            [{Id, Option}];
+            {Id, Option};
         _ ->
             []
     end.
