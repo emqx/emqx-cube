@@ -42,7 +42,7 @@ mnesia(boot) ->
     ok = ekka_mnesia:create_table(?TAB, [
                 {type, set},
                 {disc_copies, [node()]},
-                {record_name, route},
+                {record_name, ?TAB},
                 {attributes, record_info(fields, ?TAB)},
                 {storage_properties, [{ets, [{read_concurrency, true},
                                              {write_concurrency, true}]}]}]);
@@ -71,8 +71,7 @@ stop(#{id := Id}) ->
     stop_bridge(Id).
 
 status(_Bindings) ->
-    bridge_status().
-
+    {ok, bridge_status()}.
 
 -spec(all_bridges() -> list()).
 all_bridges() -> 
