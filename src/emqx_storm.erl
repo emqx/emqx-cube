@@ -78,9 +78,10 @@ callback_mode() -> [state_functions, state_enter].
 init(Config = #{client_id := ClientId}) ->
     process_flag(trap_exit, true),
     Get = fun(K, D) -> maps:get(K, Config, D) end,
+    BinClientId = erlang:list_to_binary(ClientId),
     {ok, connecting, Config#{reconnect_delay_ms := Get(reconnect_delay_ms, ?DEFAULT_RECONNECT_DELAY_MS),
-                             control_topic => <<"storm/control/", ClientId/binary>>,
-                             ack_topic => <<"storm/ack/", ClientId/binary>>}}.
+                             control_topic => <<"storm/control/", BinClientId/binary>>,
+                             ack_topic => <<"storm/ack/", BinClientId/binary>>}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until

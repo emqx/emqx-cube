@@ -74,7 +74,7 @@ init(?SUP) ->
                         ChildSpec :: supervisor:child_spec().
 storm_spec(Options) ->
     #{id       => storm,
-      start    => {emqx_storm, start_link, [storm, Options]},
+      start    => {emqx_storm, start_link, [Options]},
       restart  => permanent,
       shutdown => 5000,
       type     => worker,
