@@ -19,7 +19,7 @@
 
 -behaviour(supervisor).
 
--define(SERVER, ?MODULE).
+-define(SUP, ?MODULE).
 
 %% API
 -export([start_link/0]).
@@ -42,7 +42,7 @@
                       {error, term()} |
                       ignore.
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    supervisor:start_link({local, ?SUP}, ?MODULE, ?SUP).
 
 %%%===================================================================
 %%% Supervisor callbacks
@@ -58,11 +58,12 @@ start_link() ->
                   {ok, {SupFlags :: supervisor:sup_flags(),
                         [ChildSpec :: supervisor:child_spec()]}} |
                   ignore.
-init([]) ->
+init(?SUP) ->
     SupFlags = #{strategy => one_for_one,
                  intensity => 100,
                  period => 10},
-    Options = application:get_env(?APP, storms, []),
+    Options = application:get_all_env(?APP),
+    io:format("~nOptions : ~p~n", [Options]),
     {ok, {SupFlags, [storm_spec(Options)]}}.
 
 %%%===================================================================

@@ -14,7 +14,6 @@
 -module(emqx_storm_app).
 
 -include("emqx_storm.hrl").
--include_lib("stdlib/include/qlc.hrl").
 
 -behaviour(application).
 
