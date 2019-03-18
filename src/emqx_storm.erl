@@ -23,7 +23,7 @@
 -define(DEFAULT_RECONNECT_DELAY_MS, timer:seconds(5)).
 
 %% API
--export([start_link/2]).
+-export([start_link/1]).
 
 %% gen_statem callbacks
 -export([callback_mode/0, init/1, terminate/3, code_change/4]).
@@ -45,14 +45,14 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec start_link(atom(), map() | list()) ->
+-spec start_link(map() | list()) ->
                         {ok, Pid :: pid()} |
                         ignore |
                         {error, Error :: term()}.
-start_link(Name, Config) when is_list(Config) ->
-    start_link(Name, maps:from_list(Config));
-start_link(Name, Config) ->
-    gen_statem:start_link({local, name(Name)}, ?MODULE, Config, []).
+start_link(Config) when is_list(Config) ->
+    start_link(maps:from_list(Config));
+start_link(Config) ->
+    gen_statem:start_link({local, name(?MODULE)}, ?MODULE, Config, []).
 
 %%%===================================================================
 %%% gen_statem callbacks
