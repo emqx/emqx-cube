@@ -63,7 +63,6 @@ init(?SUP) ->
                  intensity => 100,
                  period => 10},
     Options = application:get_all_env(?APP),
-    io:format("~nOptions : ~p~n", [Options]),
     {ok, {SupFlags, [storm_spec(Options)]}}.
 
 %%%===================================================================

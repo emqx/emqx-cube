@@ -96,7 +96,7 @@ connecting(enter, _, #{reconnect_delay_ms := Timeout} = State) ->
             ?LOG(info, "Storm ~p connected", [name()]),
             Action = {state_timeout, 0, connected},
             {keep_state, State#{conn_ref => ConnRef, conn_pid => ConnPid}, Action};
-        error ->
+        _Error ->
             Action = {state_timeout, Timeout, reconnect},
             {keep_state_and_data, Action}
     end;
