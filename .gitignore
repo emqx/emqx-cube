@@ -13,3 +13,4 @@ rebar3.crashdump
 erlang.mk
 data/
 .erlang.mk/
+.DS_Store

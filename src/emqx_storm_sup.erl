@@ -63,7 +63,7 @@ init([]) ->
                  intensity => 100,
                  period => 10},
     Options = application:get_env(?APP, storms, []),
-    {ok, {SupFlags, storm_spec(Options)}}.
+    {ok, {SupFlags, [storm_spec(Options)]}}.
 
 %%%===================================================================
 %%% Internal functions
