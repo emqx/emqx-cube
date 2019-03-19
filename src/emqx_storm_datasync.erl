@@ -33,6 +33,7 @@
          add/1,
          delete/1,
          start/1,
+         create/1,
          stop/1,
          status/1]).
 -endif.
@@ -60,7 +61,7 @@ list(_Bindings) ->
     all_bridges().
 
 update(#{id := Id, options := Options}) ->
-    update_bridge(Id, Options).
+    ret(update_bridge(Id, Options)).
 
 lookup(#{id := Id}) ->
     {ok, case lookup_bridge(Id) of
@@ -72,13 +73,21 @@ lookup(#{id := Id}) ->
          end}.
 
 add(#{id := Id, options := Options}) ->
-    add_bridge(Id, Options).
+    ret(add_bridge(Id, Options)).
 
 delete(#{id := Id}) ->
-    remove_bridge(Id).
+    ret(remove_bridge(Id)).
 
 start(#{id := Id}) ->
     start_bridge(Id).
+
+create(#{id := Id, options := Options}) ->
+    case add_bridge(Id, Options) of
+        {atomic, ok} ->
+            start_bridge(Id);
+        {aborted, Error} ->
+            {ok, [{code, ?ERROR2}, {data, Error}]}
+    end.
 
 stop(#{id := Id}) ->
     stop_bridge(Id).
@@ -101,7 +110,7 @@ all_bridges() ->
                 -> {ok, list()}.
 add_bridge(Id, Options) ->
     Config = #?TAB{id = Id, options = Options},
-    ret(mnesia:transaction(fun insert_bridge/1, [Config])).
+    mnesia:transaction(fun insert_bridge/1, [Config]).
 
 -spec insert_bridge(Bridge :: ?TAB()) ->  ok | no_return().
 insert_bridge(Bridge = #?TAB{id = Id}) ->
@@ -113,7 +122,7 @@ insert_bridge(Bridge = #?TAB{id = Id}) ->
 -spec(update_bridge(atom(), list()) -> {ok, list()}).
 update_bridge(Id, Options) ->
     Bridge = #?TAB{id = Id, options = Options},
-    ret(mnesia:transaction(fun do_update_bridge/1, [Bridge])).
+    mnesia:transaction(fun do_update_bridge/1, [Bridge]).
 
 do_update_bridge(Bridge = #?TAB{id = Id}) ->
     case mnesia:read(?TAB, Id) of
@@ -123,8 +132,8 @@ do_update_bridge(Bridge = #?TAB{id = Id}) ->
 
 -spec(remove_bridge(atom()) -> ok | {error, any()}).
 remove_bridge(Id) ->
-    ret(mnesia:transaction(fun mnesia:delete/1, 
-                           [{?TAB, Id}])).
+    mnesia:transaction(fun mnesia:delete/1,
+                       [{?TAB, Id}]).
 
 -spec(start_bridge(atom()) -> {ok, list()}).
 start_bridge(Id) ->

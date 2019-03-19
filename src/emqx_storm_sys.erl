@@ -37,24 +37,24 @@ metrics(Bindings = #{node := Node}) when Node =:= node() ->
 metrics(_) ->
     emqx_mgmt_api_metrics:list(#{}, params).
 
-connections(Bindings = #{node := Node, page := PageNum, limit := Limit})
+connections(Bindings = #{node := Node, '_page':= PageNum, '_limit' := Limit})
   when Node =:= node() ->
     emqx_mgmt_api_connections:list(Bindings, params(PageNum, Limit));
 connections(_) ->
     emqx_mgmt_api_connections:list(#{node => node()}, params(<<"1">>, <<"20">>)).
 
-sessions(Bindings = #{node := Node, page := PageNum, limit := Limit})
+sessions(Bindings = #{node := Node, '_page' := PageNum, '_limit' := Limit})
   when Node =:= node() ->
     emqx_mgmt_api_sessions:list(Bindings, params(PageNum, Limit));
 sessions(_) ->
     emqx_mgmt_api_sessions:list(#{node => node()}, params(<<"1">>, <<"20">>)).
     
-topics(#{page := PageNum, limit := Limit}) ->
+topics(#{'_page' := PageNum, '_limit' := Limit}) ->
     emqx_mgmt_api_routes:list(#{}, params(PageNum, Limit));
 topics(_) ->
     emqx_mgmt_api_routes:list(#{}, params(<<"1">>, <<"20">>)).
 
-subscriptions(Bindings = #{node := Node, page := PageNum, limit := Limit}) 
+subscriptions(Bindings = #{node := Node, '_page' := PageNum, '_limit' := Limit}) 
   when Node =:= node() ->
     emqx_mgmt_api_subscriptions:list(Bindings, params(PageNum, Limit));
 subscriptions(_Bindings) ->

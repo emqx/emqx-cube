@@ -80,6 +80,7 @@ init(Config = #{client_id := ClientId}) ->
     Get = fun(K, D) -> maps:get(K, Config, D) end,
     BinClientId = erlang:list_to_binary(ClientId),
     {ok, connecting, Config#{username => BinClientId,
+                             keepalive => 600,
                              reconnect_delay_ms := Get(reconnect_delay_ms, ?DEFAULT_RECONNECT_DELAY_MS),
                              control_topic => <<"storm/control/", BinClientId/binary>>,
                              ack_topic => <<"storm/ack/", BinClientId/binary>>}}.
