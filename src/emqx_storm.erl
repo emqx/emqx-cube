@@ -31,8 +31,8 @@
         , terminate/3
         , code_change/4]).
 
--export([connecting/3,
-         connected/3]).
+-export([ connecting/3
+        , connected/3]).
 
 -import(proplists, [ get_value/3
                    , delete/2]).
@@ -214,7 +214,7 @@ handle_payload(Payload, RspTopic) ->
                      make_rsp_msg(RspTopic, RspPayload);
                  {error, _Reason} ->
                      make_rsp_msg(RspTopic,
-                                  encode_result([{code, 400}], []))
+                                  encode_result([{code, ?ERROR1}], []))
              end,
     ok = send_response(RspMsg).
 
@@ -250,11 +250,11 @@ handle_request(Req) ->
             encode_result(Result, Req)
     catch
         error:undef ->
-            encode_result([{code, 404}], Req);
+            encode_result([{code, ?ERROR2}], Req);
         error:function_clause ->
-            encode_result([{code, 422}], Req);
+            encode_result([{code, ?ERROR3}], Req);
         _Error:_Reason ->
-            encode_result([{code, 500}], Req)
+            encode_result([{code, ?ERROR5}], Req)
     end.
 
 encode_result(Result, Req) ->
@@ -282,7 +282,7 @@ return(#{code := Code, data := Data}) when is_map(Data) ->
 return(#{code := Code, data := Data}) ->
     [{code, Code}, {payload, Data}];
 return(_Map) ->
-    [{code, 404, {payload, <<"Not found">>}}].
+    [{code, ?ERROR2, {payload, <<"Not found">>}}].
 
 restruct(Resp, Req) ->
     RspKeys = proplists:get_keys(Resp),

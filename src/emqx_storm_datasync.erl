@@ -19,7 +19,6 @@
 -include("emqx_storm.hrl").
 -include_lib("emqx/include/emqx_mqtt.hrl").
 -include_lib("emqx/include/logger.hrl").
--include_lib("emqx_management/include/emqx_mgmt.hrl").
 -include_lib("stdlib/include/qlc.hrl").
 
 -ifdef(TEST).
@@ -27,15 +26,16 @@
 -compile(nowarn_export_all).
 -else.
 -export([mnesia/1]).
--export([list/1,
-         update/1,
-         lookup/1,
-         add/1,
-         delete/1,
-         start/1,
-         create/1,
-         stop/1,
-         status/1]).
+-export([ list/1
+        , update/1
+        , lookup/1
+        , add/1
+        , delete/1
+        , start/1
+        , create/1
+        , stop/1
+        , status/1
+        ]).
 -endif.
 
 -boot_mnesia({mnesia, [boot]}).
@@ -66,7 +66,7 @@ update(#{id := Id, options := Options}) ->
 lookup(#{id := Id}) ->
     {ok, case lookup_bridge(Id) of
              ?NO_BRIDGE ->
-                 [{code, ?ERROR2}];
+                 [{code, ?ERROR4}];
              Bridge ->
                  [{code, ?SUCCESS},
                   {data, Bridge}]
@@ -86,7 +86,7 @@ create(#{id := Id, options := Options}) ->
         {atomic, ok} ->
             start_bridge(Id);
         {aborted, Error} ->
-            {ok, [{code, ?ERROR2}, {data, Error}]}
+            {ok, [{code, ?ERROR4}, {data, Error}]}
     end.
 
 stop(#{id := Id}) ->
@@ -103,7 +103,7 @@ all_bridges() ->
                   {data, Result}]}
     catch
         _Error:_Reason ->
-            {ok, [{code, ?ERROR2}]}
+            {ok, [{code, ?ERROR4}]}
     end.
 
 -spec add_bridge(Id :: atom() | list(), Options :: tuple()) 
@@ -145,15 +145,15 @@ start_bridge(Id) ->
                             {data, <<"Start bridge successfully">>}];
                      connected -> [{code, ?SUCCESS},
                                    {data, <<"Bridge already started">>}];
-                     _ -> [{code, ?ERROR2},
+                     _ -> [{code, ?ERROR4},
                            {data, <<"Start bridge failed">>}]
                  catch
                      _Error:_Reason ->
-                         [{code, ?ERROR2},
+                         [{code, ?ERROR4},
                           {data, <<"Start bridge failed">>}]
                  end;
              _ ->
-                 [{code, ?ERROR2},
+                 [{code, ?ERROR4},
                   {data, <<"bridge_not_found">>}]
          end}.
 
@@ -169,7 +169,7 @@ stop_bridge(Id) ->
                  [{code, ?SUCCESS},
                   {data, <<"stop bridge successfully">>}];
              _Error -> 
-                 [{code, ?ERROR2},
+                 [{code, ?ERROR4},
                   {data, <<"stop bridge failed">>}]
          end}.
 
@@ -186,4 +186,4 @@ lookup_bridge(Id) ->
 -spec ret(Args :: {atomic, ok} | {aborted, any()})
             -> {ok, list()}.
 ret({atomic, ok})     -> {ok, [{code, ?SUCCESS}]};
-ret({aborted, Error}) -> {ok, [{code, ?ERROR2}, {data, Error}]}.
+ret({aborted, Error}) -> {ok, [{code, ?ERROR4}, {data, Error}]}.
