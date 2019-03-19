@@ -63,14 +63,11 @@ sys_t(_Config) ->
                   [emqx_storm_sys:nodes(Param),
                    emqx_storm_sys:stats(Param),
                    emqx_storm_sys:metrics(Param),
-                   {meta, emqx_storm_sys:connections(Param#{page => <<"1">>, limit => <<"15">>})},
-                   {meta, emqx_storm_sys:connections(#{})},
-                   {meta, emqx_storm_sys:sessions(Param#{page => <<"1">>, limit => <<"15">>})},
-                   {meta, emqx_storm_sys:sessions(#{})},
-                   {meta, emqx_storm_sys:topics(Param#{page => <<"1">>, limit => <<"20">>})},
-                   {meta, emqx_storm_sys:topics(#{})},
-                   {meta, emqx_storm_sys:subscriptions(Param#{page => <<"1">>, limit => <<"15">>})},
-                   {meta, emqx_storm_sys:subscriptions(#{})}]),
+                   {meta, emqx_storm_sys:connections(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
+                   {meta, emqx_storm_sys:sessions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
+                   {meta, emqx_storm_sys:topics(Param#{'_page' => <<"1">>, '_limit' => <<"20">>})},
+                   {meta, emqx_storm_sys:subscriptions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})}
+                  ]),
     ok.
 
 assertmatch_sys_t({meta, Value}) ->
@@ -79,12 +76,7 @@ assertmatch_sys_t(Value) ->
     ?assertMatch({ok, [{code, 0}, {data, _Data}]}, Value).
 
 datasync_t(_Config) ->
-    %% dbg:start(),
-    %% dbg:tracer(),
-    %% dbg:p(all, c),
-    %% dbg:tpl(emqx_storm_datasync, add, x),
     Parse= fun({ok, ValueList}) ->
-                   %% ct:log("~p", [ValueList]),
                    proplists:get_value(data, ValueList)
            end,
     ?assertEqual([], Parse(emqx_storm_datasync:list(#{}))),

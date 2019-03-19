@@ -23,42 +23,28 @@
          subscriptions/1]).
 
 nodes(Bindings = #{node := _Node}) ->
-    emqx_mgmt_api_nodes:get(Bindings, params);
-nodes(_Bindings) ->
-    emqx_mgmt_api_nodes:get(#{node => node()}, params).
+    emqx_mgmt_api_nodes:get(Bindings, params).
 
 stats(Bindings = #{node := Node}) when Node =:= node() ->
-    emqx_mgmt_api_stats:lookup(Bindings, params);
-stats(_) ->
-    emqx_mgmt_api_stats:list(#{}, params).
+    emqx_mgmt_api_stats:lookup(Bindings, params).
 
 metrics(Bindings = #{node := Node}) when Node =:= node() ->
-    emqx_mgmt_api_metrics:list(Bindings, params);
-metrics(_) ->
-    emqx_mgmt_api_metrics:list(#{}, params).
+    emqx_mgmt_api_metrics:list(Bindings, params).
 
 connections(Bindings = #{node := Node, '_page':= PageNum, '_limit' := Limit})
   when Node =:= node() ->
-    emqx_mgmt_api_connections:list(Bindings, params(PageNum, Limit));
-connections(_) ->
-    emqx_mgmt_api_connections:list(#{node => node()}, params(<<"1">>, <<"20">>)).
+    emqx_mgmt_api_connections:list(Bindings, params(PageNum, Limit)).
 
 sessions(Bindings = #{node := Node, '_page' := PageNum, '_limit' := Limit})
   when Node =:= node() ->
-    emqx_mgmt_api_sessions:list(Bindings, params(PageNum, Limit));
-sessions(_) ->
-    emqx_mgmt_api_sessions:list(#{node => node()}, params(<<"1">>, <<"20">>)).
+    emqx_mgmt_api_sessions:list(Bindings, params(PageNum, Limit)).
     
 topics(#{'_page' := PageNum, '_limit' := Limit}) ->
-    emqx_mgmt_api_routes:list(#{}, params(PageNum, Limit));
-topics(_) ->
-    emqx_mgmt_api_routes:list(#{}, params(<<"1">>, <<"20">>)).
+    emqx_mgmt_api_routes:list(#{}, params(PageNum, Limit)).
 
 subscriptions(Bindings = #{node := Node, '_page' := PageNum, '_limit' := Limit}) 
   when Node =:= node() ->
-    emqx_mgmt_api_subscriptions:list(Bindings, params(PageNum, Limit));
-subscriptions(_Bindings) ->
-    emqx_mgmt_api_subscriptions:list(#{}, params(<<"1">>, <<"20">>)).
+    emqx_mgmt_api_subscriptions:list(Bindings, params(PageNum, Limit)).
 
 params(PageNum, Limit) ->
     [{<<"_page">>, PageNum}, {<<"_limit">>, Limit}].

@@ -35,7 +35,7 @@
                          {failover, Node :: node()},
             StartArgs :: term()) ->
                    {ok, Pid :: pid()} |
-                   {ok, Pid :: pid(), State :: term()} |
+                   {ok, Pid :: pid(), State :: map()} |
                    {error, Reason :: term()}.
 start(_StartType, _StartArgs) ->
     emqx_storm_sup:start_link().

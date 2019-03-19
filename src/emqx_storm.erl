@@ -26,12 +26,16 @@
 -export([start_link/1]).
 
 %% gen_statem callbacks
--export([callback_mode/0, init/1, terminate/3, code_change/4]).
+-export([ callback_mode/0
+        , init/1
+        , terminate/3
+        , code_change/4]).
 
 -export([connecting/3,
          connected/3]).
 
--import(proplists, [get_value/3, delete/2]).
+-import(proplists, [ get_value/3
+                   , delete/2]).
 
 %%%===================================================================
 %%% API
@@ -42,7 +46,6 @@
 %% Creates a gen_statem process which calls Module:init/1 to
 %% initialize. To ensure a synchronized start-up procedure, this
 %% function does not return until Module:init/1 has returned.
-%%
 %% @end
 %%--------------------------------------------------------------------
 -spec start_link(map() | list()) ->
@@ -54,14 +57,10 @@ start_link(Config) when is_list(Config) ->
 start_link(Config) ->
     gen_statem:start_link({local, name(?MODULE)}, ?MODULE, Config, []).
 
-%%%===================================================================
-%%% gen_statem callbacks
-%%%===================================================================
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Define the callback_mode() for this callback module.
+%% Define the callback_mode() for emqx_storm
 %% @end
 %%--------------------------------------------------------------------
 -spec callback_mode() -> gen_statem:callback_mode_result().
@@ -73,17 +72,17 @@ callback_mode() -> [state_functions, state_enter].
 %% Start storm function
 %% @end
 %%--------------------------------------------------------------------
--spec init(Args :: term()) ->
-                  gen_statem:init_result(atom()).
-init(Config = #{client_id := ClientId}) ->
+-spec init(Config :: map()) ->
+                  {ok, atom(), map()}.
+init(Config = #{username := UserName}) ->
     process_flag(trap_exit, true),
-    Get = fun(K, D) -> maps:get(K, Config, D) end,
-    BinClientId = erlang:list_to_binary(ClientId),
-    {ok, connecting, Config#{username => BinClientId,
+    BinUserName = list_to_binary(UserName),
+    {ok, connecting, Config#{client_id => BinUserName,
                              keepalive => 600,
-                             reconnect_delay_ms := Get(reconnect_delay_ms, ?DEFAULT_RECONNECT_DELAY_MS),
-                             control_topic => <<"storm/control/", BinClientId/binary>>,
-                             ack_topic => <<"storm/ack/", BinClientId/binary>>}}.
+                             reconnect_delay_ms :=
+                                 map:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
+                             control_topic => <<"storm/control/", BinUserName/binary>>,
+                             ack_topic => <<"storm/ack/", BinUserName/binary>>}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -164,14 +163,14 @@ code_change(_OldVsn, State, Data, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-connect(Config = #{control_topic := Recv,
-                   ack_topic  := Snd}) ->
+connect(Config = #{control_topic := ControlTopic,
+                   ack_topic  := AckTopic}) ->
     Ref = make_ref(),
     Parent = self(),
-    Handlers = make_msg_handler(Snd, Parent, Ref),
+    Handlers = make_msg_handler(AckTopic, Parent, Ref),
     ConnectConfig = maps:without([control_topic, ack_topic],
                                  Config#{msg_handler => Handlers}),
-    Subs = [{Recv, 1}],
+    Subs = [{ControlTopic, 1}],
     case emqx_client:start_link(ConnectConfig) of
         {ok, Pid} ->
             case emqx_client:connect(Pid) of
@@ -193,9 +192,9 @@ name() -> {_, Name} = process_info(self(), registered_name), Name.
 
 name(Id) -> list_to_atom(lists:concat([?MODULE, "_", Id])).
 
-make_msg_handler(Snd, Parent, Ref) ->
+make_msg_handler(AckTopic, Parent, Ref) ->
     #{publish => fun(Msg) -> 
-                         handle_msg(Msg, #{ack_topic => Snd})
+                     handle_msg(Msg, #{ack_topic => AckTopic})
                  end,
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
@@ -209,17 +208,22 @@ handle_msg(_Msg, _Interaction) ->
     ok.
 
 handle_payload(Payload, RspTopic) ->
-    Req = emqx_json:safe_decode(Payload),
-    RspPayload = handle_request(Req),
-    RspMsg = make_rsp_msg(RspTopic, RspPayload),
+    RspMsg = case emqx_json:safe_decode(Payload) of
+                 {ok, Req} ->
+                     RspPayload = handle_request(Req),
+                     make_rsp_msg(RspTopic, RspPayload);
+                 {error, _Reason} ->
+                     make_rsp_msg(RspTopic,
+                                  encode_result([{code, 400}], []))
+             end,
     ok = send_response(RspMsg).
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
     lists:foreach(fun({Topic, QoS}) ->
-                          case emqx_client:subscribe(ClientPid, Topic, QoS) of
-                              {ok, _, _} -> ok;
-                              Error -> throw(Error)
-                          end
+                      case emqx_client:subscribe(ClientPid, Topic, QoS) of
+                          {ok, _, _} -> ok;
+                          Error -> throw(Error)
+                      end
                   end, Subscriptions).
 
 send_response(Msg) ->
@@ -227,11 +231,10 @@ send_response(Msg) ->
     %% hence delegate to another temp process for the loopback gen_statem call.
     Client = self(),
     _ = spawn_link(fun() ->
-                           case emqx_client:publish(Client, Msg) of
-                               ok -> ok;
-                               {ok, _} -> ok;
-                               {error, Reason} -> exit({failed_to_publish_response, Reason})
-                           end
+                       case emqx_client:publish(Client, Msg) of
+                           {error, Reason} -> exit({failed_to_publish_response, Reason});
+                           _Ok -> ok
+                       end
                    end),
     ok.
 
@@ -242,9 +245,21 @@ handle_request(Req) ->
                 get_value(<<"payload">>, Req, [])),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
-    {ok, Result} = Module:Fun(Args),
+    try Module:Fun(Args) of
+        {ok, Result} ->
+            encode_result(Result, Req)
+    catch
+        error:undef ->
+            encode_result([{code, 404}], Req);
+        error:function_clause ->
+            encode_result([{code, 422}], Req);
+        _Error:_Reason ->
+            encode_result([{code, 500}], Req)
+    end.
+
+encode_result(Result, Req) ->
     Rsp = return(maps:from_list(Result)),
-    emqx_json:encode(restruct(Rsp, Req)).
+    emqx_json:safe_encode(restruct(Rsp, Req)).
 
 b2a(Data) ->
     binary_to_atom(Data, utf8).
