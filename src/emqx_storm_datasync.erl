@@ -61,7 +61,7 @@ list(_Bindings) ->
     all_bridges().
 
 update(#{id := Id, options := Options}) ->
-    ret(update_bridge(Id, Options)).
+    ret(update_bridge(Id, trans_opts(Options))).
 
 lookup(#{id := Id}) ->
     {ok, case lookup_bridge(Id) of
@@ -73,7 +73,7 @@ lookup(#{id := Id}) ->
          end}.
 
 add(#{id := Id, options := Options}) ->
-    ret(add_bridge(Id, Options)).
+    ret(add_bridge(Id, trans_opts(Options))).
 
 delete(#{id := Id}) ->
     ret(remove_bridge(Id)).
@@ -82,7 +82,7 @@ start(#{id := Id}) ->
     start_bridge(Id).
 
 create(#{id := Id, options := Options}) ->
-    case add_bridge(Id, Options) of
+    case add_bridge(Id, trans_opts(Options)) of
         {atomic, ok} ->
             start_bridge(Id);
         {aborted, Error} ->
@@ -187,3 +187,44 @@ lookup_bridge(Id) ->
             -> {ok, list()}.
 ret({atomic, ok})     -> {ok, [{code, ?SUCCESS}]};
 ret({aborted, Error}) -> {ok, [{code, ?ERROR4}, {data, Error}]}.
+
+trans_opts(RawArgs) when is_list(RawArgs) ->
+    trans_opts(RawArgs, []).
+
+trans_opts([], Acc) ->
+    lists:reverse(Acc);
+trans_opts([{K0, V0} | RestProps], Acc) ->
+    ListB2L = fun(Values) ->
+                  lists:map(fun(E) ->
+                                binary_to_list(E)
+                            end, Values)
+              end,
+    case {binary_to_atom(K0, utf8), V0} of
+        {K1, V1} when K1 =:= connect_module;
+                      K1 =:= proto_ver;
+                      K1 =:= start_type ->
+            trans_opts(RestProps, [{K1, binary_to_atom(V1, utf8)} | Acc]);
+        {K2, V2} when K2 =:= address;
+                      K2 =:= client_id;
+                      K2 =:= mountpoint;
+                      K2 =:= password;
+                      K2 =:= username ->
+            trans_opts(RestProps, [{K2, binary_to_atom(V2, utf8)} | Acc]);
+        {K3, V3} when K3 =:= forwards ->
+            trans_opts(RestProps, 
+                       [{K3, ListB2L(V3)} | Acc]);
+        {K4, V4} when K4 =:= ssl_opts ->
+            trans_opts(RestProps,
+                       [{K4, lists:map(fun({versions, Vers}) ->
+                                               lists:map(fun(E) ->
+                                                             binary_to_atom(E, utf8)
+                                                         end, Vers);
+                                          ({_, Values}) ->
+                                               ListB2L(Values)
+                                       end, V4)} | Acc]);
+        {K5, V5} when K5 =:= subscriptions ->
+            trans_opts(RestProps,
+                       [{K5, lists:map(fun({Topic, QoS}) ->
+                                           {binary_to_list(Topic), QoS}
+                                       end, V5)} | Acc])
+    end.
