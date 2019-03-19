@@ -79,7 +79,8 @@ init(Config = #{client_id := ClientId}) ->
     process_flag(trap_exit, true),
     Get = fun(K, D) -> maps:get(K, Config, D) end,
     BinClientId = erlang:list_to_binary(ClientId),
-    {ok, connecting, Config#{reconnect_delay_ms := Get(reconnect_delay_ms, ?DEFAULT_RECONNECT_DELAY_MS),
+    {ok, connecting, Config#{username => BinClientId,
+                             reconnect_delay_ms := Get(reconnect_delay_ms, ?DEFAULT_RECONNECT_DELAY_MS),
                              control_topic => <<"storm/control/", BinClientId/binary>>,
                              ack_topic => <<"storm/ack/", BinClientId/binary>>}}.
 
