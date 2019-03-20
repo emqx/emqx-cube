@@ -55,7 +55,7 @@
 start_link(Config) when is_list(Config) ->
     start_link(maps:from_list(Config));
 start_link(Config) ->
-    gen_statem:start_link({local, name(?MODULE)}, ?MODULE, Config, []).
+    gen_statem:start_link({local, name()}, ?MODULE, Config, []).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -80,7 +80,7 @@ init(Config = #{username := UserName}) ->
     {ok, connecting, Config#{client_id => BinUserName,
                              keepalive => 600,
                              reconnect_delay_ms :=
-                                 map:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
+                                 maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
                              control_topic => <<"storm/control/", BinUserName/binary>>,
                              ack_topic => <<"storm/ack/", BinUserName/binary>>}}.
 
@@ -189,8 +189,6 @@ connect(Config = #{control_topic := ControlTopic,
     end.
 
 name() -> {_, Name} = process_info(self(), registered_name), Name.
-
-name(Id) -> list_to_atom(lists:concat([?MODULE, "_", Id])).
 
 make_msg_handler(AckTopic, Parent, Ref) ->
     #{publish => fun(Msg) -> 
