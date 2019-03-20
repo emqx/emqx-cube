@@ -226,5 +226,14 @@ trans_opts([{K0, V0} | RestProps], Acc) ->
             trans_opts(RestProps,
                        [{K5, lists:map(fun({Topic, QoS}) ->
                                            {binary_to_list(Topic), QoS}
-                                       end, V5)} | Acc])
+                                       end, V5)} | Acc]);
+        {K6, V6} when K6 =:= queue  ->
+            trans_opts(RestProps,
+                       [{K6, maps:from_list(
+                               lists:map(fun({<<"replayq_dir">>, QV0}) ->
+                                                 {binary_to_atom(<<"replayq_dir">>, utf8),
+                                                  binary_to_list(QV0)};
+                                            ({QK, QV}) ->
+                                                 {binary_to_atom(QK, utf8), QV}
+                                         end, V6))} | Acc])
     end.
