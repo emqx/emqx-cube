@@ -13,6 +13,7 @@
 %% limitations under the License.
 
 -record(bridges, {id       :: atom() | list(),
+                  name     :: atom() | list(),
                   options  :: tuple()}).
 
 -type bridges() :: #bridges{}.
@@ -20,3 +21,11 @@
 -define(APP, emqx_storm).
 
 -define(TAB, bridges).
+
+%% Return Codes
+-define(SUCCESS, 200).  %% Success
+-define(ERROR1, 400). %% Data resolved fail
+-define(ERROR2, 404). %% Actions and types do not exist
+-define(ERROR3, 422). %% Lack tid and clientid
+-define(ERROR4, 502). %% Resource unreachable
+-define(ERROR5, 500). %% Unknown error

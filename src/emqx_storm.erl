@@ -23,15 +23,24 @@
 -define(DEFAULT_RECONNECT_DELAY_MS, timer:seconds(5)).
 
 %% API
--export([start_link/2]).
+-export([start_link/1]).
 
 %% gen_statem callbacks
--export([callback_mode/0, init/1, terminate/3, code_change/4]).
+-export([ callback_mode/0
+        , init/1
+        , terminate/3
+        , code_change/4]).
 
--export([connecting/3,
-         connected/3]).
+-export([ connecting/3
+        , connected/3]).
 
--import(proplists, [get_value/3, delete/2]).
+-export([ l2a/1
+        , b2a/1
+        , b2l/1
+        ]).
+
+-import(proplists, [ get_value/3
+                   , delete/2]).
 
 %%%===================================================================
 %%% API
@@ -42,29 +51,19 @@
 %% Creates a gen_statem process which calls Module:init/1 to
 %% initialize. To ensure a synchronized start-up procedure, this
 %% function does not return until Module:init/1 has returned.
-%%
 %% @end
 %%--------------------------------------------------------------------
--spec start_link(atom(), map() | list()) ->
-                        {ok, Pid :: pid()} |
-                        ignore |
-                        {error, Error :: term()}.
-start_link(Name, Config) when is_list(Config) ->
-    start_link(Name, maps:from_list(Config));
-start_link(Name, Config) ->
-    gen_statem:start_link({local, name(Name)}, ?MODULE, Config, []).
-
-%%%===================================================================
-%%% gen_statem callbacks
-%%%===================================================================
+start_link(Config) when is_list(Config) ->
+    start_link(maps:from_list(Config));
+start_link(Config) ->
+    gen_statem:start_link({local, name(storm)}, ?MODULE, Config, []).
 
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% Define the callback_mode() for this callback module.
+%% Define the callback_mode() for emqx_storm
 %% @end
 %%--------------------------------------------------------------------
--spec callback_mode() -> gen_statem:callback_mode_result().
 callback_mode() -> [state_functions, state_enter].
 
 %%--------------------------------------------------------------------
@@ -73,14 +72,15 @@ callback_mode() -> [state_functions, state_enter].
 %% Start storm function
 %% @end
 %%--------------------------------------------------------------------
--spec init(Args :: term()) ->
-                  gen_statem:init_result(atom()).
-init(Config = #{client_id := ClientId}) ->
+init(Config = #{username := UserName}) ->
     process_flag(trap_exit, true),
-    Get = fun(K, D) -> maps:get(K, Config, D) end,
-    {ok, connecting, Config#{reconnect_delay_ms := Get(reconnect_delay_ms, ?DEFAULT_RECONNECT_DELAY_MS),
-                             control_topic => <<"storm/control/", ClientId/binary>>,
-                             ack_topic => <<"storm/ack/", ClientId/binary>>}}.
+    BinUserName = list_to_binary(UserName),
+    {ok, connecting, Config#{client_id => BinUserName,
+                             keepalive => 600,
+                             reconnect_delay_ms :=
+                                 maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
+                             control_topic => <<"storm/control/", BinUserName/binary>>,
+                             ack_topic => <<"storm/ack/", BinUserName/binary>>}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -92,10 +92,10 @@ connecting(enter, _, #{reconnect_delay_ms := Timeout} = State) ->
     ConnectConfig = maps:without([reconnect_delay_ms], State),
     case connect(ConnectConfig) of
         {ok, ConnRef, ConnPid} ->
-            ?LOG(info, "Storm ~p connected", [name()]),
+            ?LOG(info, "Storm ~p connected", [name(storm)]),
             Action = {state_timeout, 0, connected},
             {keep_state, State#{conn_ref => ConnRef, conn_pid => ConnPid}, Action};
-        error ->
+        _Error ->
             Action = {state_timeout, Timeout, reconnect},
             {keep_state_and_data, Action}
     end;
@@ -115,7 +115,7 @@ connected(info, {disconnected, ConnRef, Reason},
             conn_pid := ConnPid} = State) ->
     case ConnRefCurrent =:= ConnRef of
         true ->
-            ?LOG(info, "Storm ~p diconnected ~n reason=~p", [name(), ConnPid, Reason]),
+            ?LOG(info, "Storm ~p diconnected ~n reason=~p", [name(storm), ConnPid, Reason]),
             {next_state, connecting,
              State#{conn_ref := undefined, connection := undefined}};
         false ->
@@ -126,7 +126,7 @@ connected(Type, Content, State) ->
 
 common(StateName, Type, Content, State) ->
     ?LOG(info, "Storm ~p discarded ~p type event at state ~p:\n~p",
-         [name(), Type, StateName, Content]),
+         [name(storm), Type, StateName, Content]),
     {keep_state, State}.
 
 %%--------------------------------------------------------------------
@@ -138,8 +138,6 @@ common(StateName, Type, Content, State) ->
 %% Reason. The return value is ignored.
 %% @end
 %%--------------------------------------------------------------------
--spec terminate(Reason :: term(), State :: term(), Data :: term()) ->
-                       any().
 terminate(_Reason, _State, _Data) ->
     void.
 
@@ -149,11 +147,6 @@ terminate(_Reason, _State, _Data) ->
 %% Convert process state when code is changed
 %% @end
 %%--------------------------------------------------------------------
--spec code_change(
-        OldVsn :: term() | {down,term()},
-        State :: term(), Data :: term(), Extra :: term()) ->
-                         {ok, NewState :: term(), NewData :: term()} |
-                         (Reason :: term()).
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
@@ -161,14 +154,13 @@ code_change(_OldVsn, State, Data, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-connect(Config = #{control_topic := Recv,
-                   ack_topic  := Snd}) ->
+connect(Config = #{control_topic := ControlTopic}) ->
     Ref = make_ref(),
     Parent = self(),
-    Handlers = make_msg_handler(Snd, Parent, Ref),
+    Handlers = make_msg_handler(Config, Parent, Ref),
     ConnectConfig = maps:without([control_topic, ack_topic],
                                  Config#{msg_handler => Handlers}),
-    Subs = [{Recv, 1}],
+    Subs = [{ControlTopic, 1}],
     case emqx_client:start_link(ConnectConfig) of
         {ok, Pid} ->
             case emqx_client:connect(Pid) of
@@ -186,13 +178,11 @@ connect(Config = #{control_topic := Recv,
         {error, _} = Error -> Error
     end.
 
-name() -> {_, Name} = process_info(self(), registered_name), Name.
-
 name(Id) -> list_to_atom(lists:concat([?MODULE, "_", Id])).
 
-make_msg_handler(Snd, Parent, Ref) ->
+make_msg_handler(Config, Parent, Ref) ->
     #{publish => fun(Msg) -> 
-                         handle_msg(Msg, #{ack_topic => Snd})
+                     handle_msg(Msg, Config)
                  end,
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
@@ -206,17 +196,22 @@ handle_msg(_Msg, _Interaction) ->
     ok.
 
 handle_payload(Payload, RspTopic) ->
-    Req = emqx_json:safe_decode(Payload),
-    RspPayload = handle_request(Req),
-    RspMsg = make_rsp_msg(RspTopic, RspPayload),
+    RspMsg = case emqx_json:safe_decode(Payload) of
+                 {ok, Req} ->
+                     {ok, RspPayload} = handle_request(Req),
+                     make_rsp_msg(RspTopic, RspPayload);
+                 {error, _Reason} ->
+                     {ok, RspPayload} = encode_result([{code, ?ERROR1}], []),
+                     make_rsp_msg(RspTopic, RspPayload)
+             end,
     ok = send_response(RspMsg).
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
     lists:foreach(fun({Topic, QoS}) ->
-                          case emqx_client:subscribe(ClientPid, Topic, QoS) of
-                              {ok, _, _} -> ok;
-                              Error -> throw(Error)
-                          end
+                      case emqx_client:subscribe(ClientPid, Topic, QoS) of
+                          {ok, _, _} -> ok;
+                          Error -> throw(Error)
+                      end
                   end, Subscriptions).
 
 send_response(Msg) ->
@@ -224,31 +219,43 @@ send_response(Msg) ->
     %% hence delegate to another temp process for the loopback gen_statem call.
     Client = self(),
     _ = spawn_link(fun() ->
-                           case emqx_client:publish(Client, Msg) of
-                               ok -> ok;
-                               {ok, _} -> ok;
-                               {error, Reason} -> exit({failed_to_publish_response, Reason})
-                           end
+                       case emqx_client:publish(Client, Msg) of
+                           {error, Reason} -> exit({failed_to_publish_response, Reason});
+                           _Ok -> ok
+                       end
                    end),
     ok.
 
 handle_request(Req) ->
-    Type = b2l(get_value(<<"type">>, Req, [])),
-    Fun = b2a(get_value(<<"action">>, Req, [])),
-    RawArgs = emqx_json:safe_decode(
-                get_value(<<"payload">>, Req, [])),
+    Type = b2l(get_value(<<"type">>, Req, <<>>)),
+    Fun = b2a(get_value(<<"action">>, Req, <<>>)),
+    RawArgs = get_value(<<"payload">>, Req, []),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
-    {ok, Result} = Module:Fun(Args),
+    try Module:Fun(Args) of
+        {ok, Result} ->
+            encode_result(Result, Req)
+    catch
+        error:undef ->
+            encode_result([{code, ?ERROR2}], Req);
+        error:function_clause ->
+            encode_result([{code, ?ERROR3}], Req);
+        _Error:_Reason ->
+            encode_result([{code, ?ERROR5}], Req)
+    end.
+
+encode_result(Result, Req) ->
     Rsp = return(maps:from_list(Result)),
-    emqx_json:encode(restruct(Rsp, Req)).
+    emqx_json:safe_encode(restruct(Rsp, Req)).
 
-b2a(Data) ->
-    binary_to_atom(Data, utf8).
+b2a(B) -> binary_to_atom(B, utf8).
 
-b2l(Data) ->
-    binary_to_list(Data).
+b2l(B) -> binary_to_list(B).
 
+l2a(L) -> list_to_atom(L).
+
+convert(<<>>) ->
+    convert([]);
 convert(RawArgs) when is_list(RawArgs) ->
     convert(RawArgs, []).
 
@@ -257,14 +264,16 @@ convert([], Acc) ->
 convert([{K, V} | RestProps], Acc) ->
     convert(RestProps, [{b2a(K), V} | Acc]).
 
-return(#{code := Code}) ->
-    [{code, Code}, {payload, <<>>}];
 return(#{code := Code, data := Data}) when is_map(Data) ->
-    [{code, Code}, {payload, maps:to_list(Data)}];
+    [{<<"code">>, Code}, {<<"payload">>, maps:to_list(Data)}];
+return(#{code := 0, data := Data}) ->
+    [{<<"code">>, ?SUCCESS}, {<<"payload">>, Data}];
 return(#{code := Code, data := Data}) ->
-    [{code, Code}, {payload, Data}];
+    [{<<"code">>, Code}, {<<"payload">>, Data}];
+return(#{code := Code}) ->
+    [{<<"code">>, Code}, {<<"payload">>, <<>>}];
 return(_Map) ->
-    [{code, 404, {payload, <<"Not found">>}}].
+    [{<<"code">>, ?ERROR2}, {<<"payload">>, <<"Not found">>}].
 
 restruct(Resp, Req) ->
     RspKeys = proplists:get_keys(Resp),

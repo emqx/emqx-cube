@@ -9,9 +9,8 @@ rel/example_project
 .concrete/DEV_MODE
 .rebar
 _build/
-rebar.config
-rebar.lock
 rebar3.crashdump
 erlang.mk
 data/
 .erlang.mk/
+.DS_Store

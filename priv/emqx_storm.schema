@@ -26,15 +26,11 @@
   {datatype, string}
 ]}.
 
-{mapping, "storm.client_id", "emqx_storm", [
+{mapping, "storm.username", "emqx_storm", [
   {datatype, string}
 ]}.
 
 {mapping, "storm.password", "emqx_storm", [
-  {datatype, string}
-]}.
-
-{mapping, "storm.uid", "emqx_storm", [
   {datatype, string}
 ]}.
 
@@ -84,7 +80,6 @@
                   Tr(Key, Value, Cfg) ->
                       Cfg#{Key => Value}
               end,
-
   C = lists:foldl(
         fun({["storm", Opt], Val}, Acc) ->
                 Merge(list_to_atom(Opt), Val, Acc);

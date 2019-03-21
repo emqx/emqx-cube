@@ -14,12 +14,12 @@
 -module(emqx_storm_app).
 
 -include("emqx_storm.hrl").
--include_lib("stdlib/include/qlc.hrl").
 
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1]).
+-export([ start/2
+        , stop/1]).
 
 %%%===================================================================
 %%% Application callbacks
@@ -36,7 +36,7 @@
                          {failover, Node :: node()},
             StartArgs :: term()) ->
                    {ok, Pid :: pid()} |
-                   {ok, Pid :: pid(), State :: term()} |
+                   {ok, Pid :: pid(), State :: map()} |
                    {error, Reason :: term()}.
 start(_StartType, _StartArgs) ->
     emqx_storm_sup:start_link().

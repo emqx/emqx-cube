@@ -19,7 +19,7 @@
 
 -behaviour(supervisor).
 
--define(SERVER, ?MODULE).
+-define(SUP, ?MODULE).
 
 %% API
 -export([start_link/0]).
@@ -42,7 +42,7 @@
                       {error, term()} |
                       ignore.
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    supervisor:start_link({local, ?SUP}, ?MODULE, ?SUP).
 
 %%%===================================================================
 %%% Supervisor callbacks
@@ -58,12 +58,12 @@ start_link() ->
                   {ok, {SupFlags :: supervisor:sup_flags(),
                         [ChildSpec :: supervisor:child_spec()]}} |
                   ignore.
-init([]) ->
+init(?SUP) ->
     SupFlags = #{strategy => one_for_one,
                  intensity => 100,
                  period => 10},
-    Options = application:get_env(?APP, storms, []),
-    {ok, {SupFlags, storm_spec(Options)}}.
+    Options = application:get_all_env(?APP),
+    {ok, {SupFlags, [storm_spec(Options)]}}.
 
 %%%===================================================================
 %%% Internal functions
@@ -73,7 +73,7 @@ init([]) ->
                         ChildSpec :: supervisor:child_spec().
 storm_spec(Options) ->
     #{id       => storm,
-      start    => {emqx_storm, start_link, [storm, Options]},
+      start    => {emqx_storm, start_link, [Options]},
       restart  => permanent,
       shutdown => 5000,
       type     => worker,

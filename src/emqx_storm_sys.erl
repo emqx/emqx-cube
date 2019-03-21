@@ -14,51 +14,51 @@
 
 -module(emqx_storm_sys).
 
--export([nodes/1,
-         stats/1,
-         metrics/1,
-         connections/1,
-         sessions/1,
-         topics/1,
-         subscriptions/1]).
+-export([ nodes/1
+        , stats/1
+        , metrics/1
+        , connections/1
+        , sessions/1
+        , topics/1
+        , subscriptions/1]).
 
-nodes(Bindings = #{node := _Node}) ->
-    emqx_mgmt_api_nodes:get(Bindings, params);
-nodes(_Bindings) ->
-    emqx_mgmt_api_nodes:get(#{node => node()}, params).
+nodes(Bindings) ->
+    emqx_mgmt_api_nodes:get(Bindings, params).
 
-stats(Bindings = #{node := Node}) when Node =:= node() ->
+stats(Bindings = #{node := _Node}) ->
     emqx_mgmt_api_stats:lookup(Bindings, params);
-stats(_) ->
-    emqx_mgmt_api_stats:list(#{}, params).
+stats(Bindings) ->
+    emqx_mgmt_api_stats:lookup(Bindings#{node => node()}, params).
 
-metrics(Bindings = #{node := Node}) when Node =:= node() ->
-    emqx_mgmt_api_metrics:list(Bindings, params);
-metrics(_) ->
-    emqx_mgmt_api_metrics:list(#{}, params).
+metrics(Bindings) ->
+    emqx_mgmt_api_metrics:list(Bindings, params).
 
-connections(Bindings = #{node := Node, page := PageNum, limit := Limit})
-  when Node =:= node() ->
-    emqx_mgmt_api_connections:list(Bindings, params(PageNum, Limit));
-connections(_) ->
-    emqx_mgmt_api_connections:list(#{node => node()}, params(<<"1">>, <<"20">>)).
+connections(Bindings = #{'_page':= PageNum, '_limit' := Limit})->
+    emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(PageNum, Limit));
+connections(Bindings) ->
+    emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(1, 20)).
 
-sessions(Bindings = #{node := Node, page := PageNum, limit := Limit})
-  when Node =:= node() ->
-    emqx_mgmt_api_sessions:list(Bindings, params(PageNum, Limit));
-sessions(_) ->
-    emqx_mgmt_api_sessions:list(#{node => node()}, params(<<"1">>, <<"20">>)).
-    
-topics(#{page := PageNum, limit := Limit}) ->
+sessions(Bindings = #{'_page' := PageNum, '_limit' := Limit}) ->
+    emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(PageNum, Limit));
+sessions(Bindings) ->
+    emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(1, 20)).
+
+
+topics(#{'_page' := PageNum, '_limit' := Limit}) ->
     emqx_mgmt_api_routes:list(#{}, params(PageNum, Limit));
-topics(_) ->
-    emqx_mgmt_api_routes:list(#{}, params(<<"1">>, <<"20">>)).
+topics(_Bindings) ->
+    emqx_mgmt_api_routes:list(#{}, params(1, 20)).
 
-subscriptions(Bindings = #{node := Node, page := PageNum, limit := Limit}) 
-  when Node =:= node() ->
-    emqx_mgmt_api_subscriptions:list(Bindings, params(PageNum, Limit));
-subscriptions(_Bindings) ->
-    emqx_mgmt_api_subscriptions:list(#{}, params(<<"1">>, <<"20">>)).
+subscriptions(Bindings = #{'_page' := PageNum, '_limit' := Limit}) ->
+    emqx_mgmt_api_subscriptions:list(Bindings#{ node => node() }, params(PageNum, Limit));
+subscriptions(Bindings) ->
+    emqx_mgmt_api_subscriptions:list(Bindings#{ node => node() }, params(1, 20)).
 
 params(PageNum, Limit) ->
-    [{<<"_page">>, PageNum}, {<<"_limit">>, Limit}].
+    [{<<"_page">>, maybe_itb(PageNum)},
+     {<<"_limit">>, maybe_itb(Limit)}].
+
+maybe_itb(I) when is_integer(I) ->
+    integer_to_binary(I);
+maybe_itb(I) ->
+    I.
