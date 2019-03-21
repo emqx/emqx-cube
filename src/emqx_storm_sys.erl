@@ -37,13 +37,13 @@ connections(Bindings = #{'_page':= PageNum, '_limit' := Limit})->
     emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(PageNum, Limit)).
 
 sessions(Bindings = #{'_page' := PageNum, '_limit' := Limit}) ->
-    emqx_mgmt_api_sessions:list(Bindings, params(PageNum, Limit)).
+    emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(PageNum, Limit)).
     
 topics(#{'_page' := PageNum, '_limit' := Limit}) ->
     emqx_mgmt_api_routes:list(#{}, params(PageNum, Limit)).
 
 subscriptions(Bindings = #{'_page' := PageNum, '_limit' := Limit}) ->
-    emqx_mgmt_api_subscriptions:list(Bindings, params(PageNum, Limit)).
+    emqx_mgmt_api_subscriptions:list(Bindings#{ node => node() }, params(PageNum, Limit)).
 
 params(PageNum, Limit) ->
     [{<<"_page">>, integer_to_binary(PageNum)},
