@@ -224,11 +224,7 @@ send_response(Msg) ->
 handle_request(Req) ->
     Type = b2l(get_value(<<"type">>, Req, <<>>)),
     Fun = b2a(get_value(<<"action">>, Req, <<>>)),
-    RawArgs = case emqx_json:safe_decode(
-                     get_value(<<"payload">>, Req, <<>>)) of
-                  {error, _Err} -> [];
-                  Value -> Value
-              end,
+    RawArgs = get_value(<<"payload">>, Req, []),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
     io:format("~n ==== Module: ~p, Fun: ~p =====~n", [Module, Fun]),
@@ -254,6 +250,8 @@ b2a(Data) ->
 b2l(Data) ->
     binary_to_list(Data).
 
+convert(<<>>) ->
+    convert([]);
 convert(RawArgs) when is_list(RawArgs) ->
     convert(RawArgs, []).
 

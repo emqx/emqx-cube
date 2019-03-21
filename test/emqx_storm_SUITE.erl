@@ -37,8 +37,9 @@ all() ->
 groups() ->
     [{emqx_storm, [sequence],
       [ storm_t
-      , datasync_t
-      , sys_t]}].
+      %% , datasync_t
+      %% , sys_t
+      ]}].
 
 init_per_suite(Config) ->
     dbg:start(),
@@ -48,17 +49,16 @@ init_per_suite(Config) ->
     %% dbg:tpl(emqx_storm, init, x),
     %% dbg:tpl(emqx_client, subscribe, x),
     %% dbg:tpl(emqx_storm, handle_msg, x),
+    dbg:tpl(emqx_storm_sys, connections, x),
+    dbg:tpl(emqx_mgmt_api_connections, list, x),
+    dbg:tpl(emqx_mgmt_api_connections, paginate, x),
     %% dbg:tpl(emqx_storm, handle_payload, x),
     %% dbg:tpl(emqx_storm, handle_request, x),
     %% dbg:tpl(emqx_storm_sys, stats, x),
     %% dbg:tpl(emqx_storm, encode_result, x),
-    dbg:tpl(emqx_storm, make_rsp_msg, x),
     %% dbg:tpl(emqx_storm, return, x),
     %% dbg:tpl(emqx_storm, restruct, x),
-    dbg:tpl(emqx_storm, send_response, x),
-    dbg:tpl(emqx_client, publish, x),
     %% dbg:tpl(emqx_client, eval_msg_handler, x),
-    dbg:tpl(emqx_client, publish_process, x),
     application:load(emqx_storm),
     [start_apps(App, SchemaFile, ConfigFile) ||
         {App, SchemaFile, ConfigFile}
@@ -94,19 +94,46 @@ test_sys() ->
     {ok, C} = emqx_client:start_link(),
     {ok, _} = emqx_client:connect(C),
     {ok, _, [1]} = emqx_client:subscribe(C, ?ACK, qos1),
-    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"stats">>, <<>>), 1),
+    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"nodes">>, <<>>), 1),
     ?assert(receive_response()),
     {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"stats">>, <<>>), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"metrics">>, <<>>), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(
+                               sys, <<"connections">>, 
+                               [{'_page', 1},
+                                {'_limit', 15}]), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(
+                               sys, <<"sessions">>, 
+                               [{'_page', 1},
+                                {'_limit', 15}]), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(
+                               sys, <<"topics">>, 
+                               [{'_page', 1},
+                                {'_limit', 15}]), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(
+                               sys, <<"subscriptions">>, 
+                               [{'_page', 1},
+                                {'_limit', 15}]), 1),
     ?assert(receive_response()),
     ok = emqx_client:disconnect(C).
 
 test_datasync() ->
     ok.
 
-construct(sys, Action, _Payload) ->
+construct(sys, Action, Payload) ->
     Tuple = [{tid, <<"111">>},
              {type, <<"sys">>},
-             {action, Action}],
+             {action, Action},
+             {payload, Payload}],
     emqx_json:encode(Tuple).
 
 sys_t(_Config) ->
