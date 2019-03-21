@@ -90,7 +90,6 @@ receive_response() ->
     end.
 
 test_sys() ->
-    ct:print("start test sys"),
     {ok, C} = emqx_client:start_link(),
     {ok, _} = emqx_client:connect(C),
     {ok, _, [1]} = emqx_client:subscribe(C, ?ACK, qos1),

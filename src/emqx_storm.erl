@@ -34,6 +34,11 @@
 -export([ connecting/3
         , connected/3]).
 
+-export([ l2a/1
+        , b2a/1
+        , b2l/1
+        ]).
+
 -import(proplists, [ get_value/3
                    , delete/2]).
 
@@ -227,7 +232,6 @@ handle_request(Req) ->
     RawArgs = get_value(<<"payload">>, Req, []),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
-    io:format("~n ==== Module: ~p, Fun: ~p =====~n", [Module, Fun]),
     try Module:Fun(Args) of
         {ok, Result} ->
             encode_result(Result, Req)
@@ -244,11 +248,11 @@ encode_result(Result, Req) ->
     Rsp = return(maps:from_list(Result)),
     emqx_json:safe_encode(restruct(Rsp, Req)).
 
-b2a(Data) ->
-    binary_to_atom(Data, utf8).
+b2a(B) -> binary_to_atom(B, utf8).
 
-b2l(Data) ->
-    binary_to_list(Data).
+b2l(B) -> binary_to_list(B).
+
+l2a(L) -> list_to_atom(L).
 
 convert(<<>>) ->
     convert([]);

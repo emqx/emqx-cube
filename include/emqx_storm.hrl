@@ -13,6 +13,7 @@
 %% limitations under the License.
 
 -record(bridges, {id       :: atom() | list(),
+                  name     :: atom() | list(),
                   options  :: tuple()}).
 
 -type bridges() :: #bridges{}.
