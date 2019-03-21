@@ -37,28 +37,17 @@ all() ->
 groups() ->
     [{emqx_storm, [sequence],
       [ storm_t
-      , datasync_t
-      , sys_t
+      %% , datasync_t
+      %% , sys_t
       ]}].
 
 init_per_suite(Config) ->
-    %% dbg:start(),
-    %% dbg:tracer(),
-    %% dbg:p(all, c),
-    %% dbg:tpl(emqx_storm, start_link, x),
-    %% dbg:tpl(emqx_storm, init, x),
-    %% dbg:tpl(emqx_client, subscribe, x),
-    %% dbg:tpl(emqx_storm, handle_msg, x),
-    %% dbg:tpl(emqx_storm_sys, connections, x),
-    %% dbg:tpl(emqx_mgmt_api_connections, list, x),
-    %% dbg:tpl(emqx_mgmt_api_connections, paginate, x),
-    %% dbg:tpl(emqx_storm, handle_payload, x),
-    %% dbg:tpl(emqx_storm, handle_request, x),
-    %% dbg:tpl(emqx_storm_sys, stats, x),
-    %% dbg:tpl(emqx_storm, encode_result, x),
-    %% dbg:tpl(emqx_storm, return, x),
-    %% dbg:tpl(emqx_storm, restruct, x),
-    %% dbg:tpl(emqx_client, eval_msg_handler, x),
+    dbg:start(),
+    dbg:tracer(),
+    dbg:p(all, c),
+    dbg:tpl(emqx_storm_datasync, all_bridges, x),
+    dbg:tpl(emqx_storm_datasync, add_bridge, x),
+    dbg:tpl(emqx_storm, return, x),
     application:load(emqx_storm),
     [start_apps(App, SchemaFile, ConfigFile) ||
         {App, SchemaFile, ConfigFile}
@@ -75,7 +64,7 @@ end_per_suite(_Config) ->
 
 storm_t(_Config) ->
     test_sys(),
-    test_datasync(),
+    %% test_datasync(),
     ok.
 
 receive_response() ->
@@ -126,14 +115,66 @@ test_sys() ->
     ok = emqx_client:disconnect(C).
 
 test_datasync() ->
-    ok.
+    {ok, C} = emqx_client:start_link(),
+    {ok, _} = emqx_client:connect(C),
+    {ok, _, [1]} = emqx_client:subscribe(C, ?ACK, qos1),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"list">>,
+                                       bridge_params()), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"lookup">>,
+                                       [{id, <<"bridge_id">>}]), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"update">>,
+                                       bridge_params(<<"bridge_name2">>)), 1),
+    ?assert(receive_response()),
+    ok = emqx_client:disconnect(C).
 
-construct(sys, Action, Payload) ->
-    Tuple = [{tid, <<"111">>},
-             {type, <<"sys">>},
-             {action, Action},
-             {payload, Payload}],
-    emqx_json:encode(Tuple).
+construct(Type, Action, Payload) ->
+    TupleList = [{tid, <<"111">>},
+                 {type, erlang:atom_to_binary(Type, utf8)},
+                 {action, Action},
+                 {payload, Payload}],
+    emqx_json:encode(TupleList).
+
+bridge_params() ->
+    bridge_params(<<"bridge_name">>).
+bridge_params(BridgeName) ->
+    [{<<"id">>, <<"bridge_id">>},
+     {<<"name">>, BridgeName},
+     {<<"address">>,<<"127.0.0.1:1883">>},
+     {<<"clean_start">>,true},
+     {<<"client_id">>,<<"bridge_aws">>},
+     {<<"username">>,<<"user">>},
+     {<<"forwards">>,[<<"topic1/#">>,<<"topic2/#">>]},
+     {<<"keepalive">>,<<"60s">>},
+     {<<"max_inflight_batches">>,32},
+     {<<"mountpoint">>,<<"bridge/aws/${node}/">>},
+     {<<"password">>,<<"passwd">>},
+     {<<"proto_ver">>,<<"mqttv4">>},
+     {<<"queue">>,
+      [{<<"batch_count_limit">>,32},
+       {<<"batch_bytes_limit">>,<<"1000MB">>},
+       {<<"replayq_dir">>,<<"data/emqx_bridge/">>},
+       {<<"replayq_seg_bytes">>,<<"10MB">>}]},
+     {<<"reconnect_interval">>,<<"30s">>},
+     {<<"retry_interval">>,<<"20s">>},
+     {<<"ssl">>,<<"off">>},
+     {<<"ssl_opt">>,
+      [{<<"cacertfile">>,<<"etc/certs/cacert.pem">>},
+       {<<"certfile">>,<<"etc/certs/client-cert.pem">>},
+       {<<"keyfile">>,<<"etc/certs/client-key.pem">>},
+       {<<"ciphers">>,
+        <<"ECDHE-ECDSA-AES256-GCM-SHA384,ECDHE-RSA-AES256-GCM-SHA384">>},
+       {<<"psk_ciphers">>,
+        <<"PSK-AES128-CBC-SHA,PSK-AES256-CBC-SHA,PSK-3DES-EDE-CBC-SHA,PSK-RC4-SHA">>},
+       {<<"tls_versions">>,<<"tlsv1.2,tlsv1.1,tlsv1">>}]},
+     {<<"start_type">>,<<"manual">>},
+     {<<"subscription">>,
+      [[{<<"topic">>,<<"topic/1">>},{<<"qos">>,1}],
+       [{<<"topic">>,<<"topic/2">>},{<<"qos">>,1}]]}].
 
 sys_t(_Config) ->
     Param = #{node => node()},
@@ -174,6 +215,9 @@ datasync_t(_Config) ->
     emqx_storm_datasync:stop(#{id => test_id}),
     ?assertEqual([], Parse(emqx_storm_datasync:status(#{}))),
     ok.
+
+bridge_json() ->
+    <<"{\"address\":\"127.0.0.1:1883\",\"clean_start\":true,\"client_id\":\"bridge_aws\",\"username\":\"user\",\"forwards\":[\"topic1/#\",\"topic2/#\"],\"keepalive\":\"60s\",\"max_inflight_batches\":32,\"mountpoint\":\"bridge/aws/${node}/\",\"password\":\"passwd\",\"proto_ver\":\"mqttv4\",\"queue\":{\"batch_count_limit\":32,\"batch_bytes_limit\":\"1000MB\",\"replayq_dir\":\"data/emqx_bridge/\",\"replayq_seg_bytes\":\"10MB\"},\"reconnect_interval\":\"30s\",\"retry_interval\":\"20s\",\"ssl\":\"off\",\"ssl_opt\":{\"cacertfile\":\"etc/certs/cacert.pem\",\"certfile\":\"etc/certs/client-cert.pem\",\"keyfile\":\"etc/certs/client-key.pem\",\"ciphers\":\"ECDHE-ECDSA-AES256-GCM-SHA384,ECDHE-RSA-AES256-GCM-SHA384\",\"psk_ciphers\":\"PSK-AES128-CBC-SHA,PSK-AES256-CBC-SHA,PSK-3DES-EDE-CBC-SHA,PSK-RC4-SHA\",\"tls_versions\":\"tlsv1.2,tlsv1.1,tlsv1\"},\"start_type\":\"manual\",\"subscription\":[{\"topic\":\"topic/1\",\"qos\":1},{\"topic\":\"topic/2\",\"qos\":1}]}">>.
 
 bridge_spec() ->
     [{address,"127.0.0.1:1883"},

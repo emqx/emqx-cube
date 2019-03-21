@@ -112,10 +112,10 @@ all_bridges() ->
             {ok, [{code, ?ERROR4}]}
     end.
 
--spec add_bridge(Id :: atom() | list(),
+-spec(add_bridge(Id :: atom() | list(),
                  Name :: atom() | list(),
                  Options :: list()) 
-                -> {ok, list()}.
+      -> {ok, list()}).
 add_bridge(Id, Name, Options) ->
     Config = #?TAB{id = Id, name = Name, options = Options},
     mnesia:transaction(fun insert_bridge/1, [Config]).
@@ -200,8 +200,8 @@ lookup_bridge(Id) ->
             ?NO_BRIDGE
     end.
 
--spec ret(Args :: {atomic, ok} | {aborted, any()})
-            -> {ok, list()}.
+-spec(ret(Args :: {atomic, ok} | {aborted, any()})
+      -> {ok, list()}).
 ret({atomic, ok})     -> {ok, [{code, ?SUCCESS}]};
 ret({aborted, Error}) -> {ok, [{code, ?ERROR4}, {data, Error}]}.
 
