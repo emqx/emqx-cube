@@ -46,5 +46,10 @@ subscriptions(Bindings = #{'_page' := PageNum, '_limit' := Limit}) ->
     emqx_mgmt_api_subscriptions:list(Bindings#{ node => node() }, params(PageNum, Limit)).
 
 params(PageNum, Limit) ->
-    [{<<"_page">>, integer_to_binary(PageNum)},
-     {<<"_limit">>, integer_to_binary(Limit)}].
+    [{<<"_page">>, maybe_itb(PageNum)},
+     {<<"_limit">>, maybe_itb(Limit)}].
+
+maybe_itb(I) when is_integer(I) ->
+    integer_to_binary(I);
+maybe_itb(I) ->
+    I.

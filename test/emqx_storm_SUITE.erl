@@ -22,9 +22,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("common_test/include/ct.hrl").
 
--define(BRIDGE1, {bridge1, [{address, "127.0.0.1"}]}).
--define(BRIDGE2, {bridge2, [{address, "127.0.0.2"}]}).
--define(BRIDGE3, {bridge3, [{address, "127.0.0.3"}]}).
+-define(BRIDGE1, {bridge1_id, bridge1_name, [{address, "127.0.0.1"}]}).
+-define(BRIDGE2, {bridge2_id, bridge2_name, [{address, "127.0.0.2"}]}).
+-define(BRIDGE3, {bridge3_id, bridge3_name, [{address, "127.0.0.3"}]}).
 
 -define(CONTROL, <<"storm/control/qg3rgewt135">>).
 -define(ACK, <<"storm/ack/qg3rgewt135">>).
@@ -37,21 +37,21 @@ all() ->
 groups() ->
     [{emqx_storm, [sequence],
       [ storm_t
-      %% , datasync_t
-      %% , sys_t
+      , datasync_t
+      , sys_t
       ]}].
 
 init_per_suite(Config) ->
-    dbg:start(),
-    dbg:tracer(),
-    dbg:p(all, c),
+    %% dbg:start(),
+    %% dbg:tracer(),
+    %% dbg:p(all, c),
     %% dbg:tpl(emqx_storm, start_link, x),
     %% dbg:tpl(emqx_storm, init, x),
     %% dbg:tpl(emqx_client, subscribe, x),
     %% dbg:tpl(emqx_storm, handle_msg, x),
-    dbg:tpl(emqx_storm_sys, connections, x),
-    dbg:tpl(emqx_mgmt_api_connections, list, x),
-    dbg:tpl(emqx_mgmt_api_connections, paginate, x),
+    %% dbg:tpl(emqx_storm_sys, connections, x),
+    %% dbg:tpl(emqx_mgmt_api_connections, list, x),
+    %% dbg:tpl(emqx_mgmt_api_connections, paginate, x),
     %% dbg:tpl(emqx_storm, handle_payload, x),
     %% dbg:tpl(emqx_storm, handle_request, x),
     %% dbg:tpl(emqx_storm_sys, stats, x),
@@ -159,20 +159,19 @@ datasync_t(_Config) ->
                proplists:get_value(data, ValueList)
            end,
     ?assertEqual([], Parse(emqx_storm_datasync:list(#{}))),
-    lists:foreach(fun({Id, Options}) ->
-                      emqx_storm_datasync:add_bridge(Id, Options)
+    lists:foreach(fun({Id, Name, Options}) ->
+                      emqx_storm_datasync:add_bridge(Id, Name, Options)
                   end, ?BRIDGES),
-    %% ct:log("~p", [ets:tab2list(bridges)]),
     ?assertEqual(3, length(Parse(emqx_storm_datasync:all_bridges()))),
-    emqx_storm_datasync:update_bridge(bridge1, [{address, "127.0.0.4"}]),
-    ?assertEqual({bridge1, [{address, "127.0.0.4"}]},
-                 Parse(emqx_storm_datasync:lookup(#{id => bridge1}))),
-    emqx_storm_datasync:delete(#{id => bridge3}),
+    emqx_storm_datasync:update_bridge(bridge1_id, bridge1_name, [{address, "127.0.0.4"}]),
+    ?assertEqual({bridge1_name, [{address, "127.0.0.4"}]},
+                 Parse(emqx_storm_datasync:lookup(#{id => bridge1_id}))),
+    emqx_storm_datasync:delete(#{id => bridge3_id}),
     ?assertEqual(2, length(Parse(emqx_storm_datasync:list(#{})))),
-    emqx_storm_datasync:add_bridge(test, bridge_spec()),
-    emqx_storm_datasync:start(#{id => test}),
-    ?assertEqual([{test, connected}], Parse(emqx_storm_datasync:status(#{}))),
-    emqx_storm_datasync:stop(#{id => test}),
+    emqx_storm_datasync:add_bridge(test_id, test_name, bridge_spec()),
+    emqx_storm_datasync:start(#{id => test_id}),
+    ?assertEqual([{test_name, connected}], Parse(emqx_storm_datasync:status(#{}))),
+    emqx_storm_datasync:stop(#{id => test_id}),
     ?assertEqual([], Parse(emqx_storm_datasync:status(#{}))),
     ok.
 
