@@ -80,14 +80,13 @@ storm_t(_Config) ->
 
 receive_response() ->
     receive
-        {publish, Msg} ->
-            ct:log("Msg: ~p", [Msg]),
-            Msg;
-        OtherMsg ->
-            ct:log("OtherMsg: ~p", [OtherMsg]),
+        Msg = {publish, #{topic := ?ACK}} ->
+            ct:log("~p", [Msg]),
+            true;
+        _OtherMsg ->
             receive_response()
     after 100 ->
-            ct:log("No msg fetched")
+            false
     end.
 
 test_sys() ->
@@ -96,9 +95,9 @@ test_sys() ->
     {ok, _} = emqx_client:connect(C),
     {ok, _, [1]} = emqx_client:subscribe(C, ?ACK, qos1),
     {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"stats">>, <<>>), 1),
-    {ok, _} = emqx_client:publish(C, ?ACK, construct(sys, <<"stats">>, <<>>), 1),
-    ct:print("start test sys"),
-    receive_response(),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"stats">>, <<>>), 1),
+    ?assert(receive_response()),
     ok = emqx_client:disconnect(C).
 
 test_datasync() ->
