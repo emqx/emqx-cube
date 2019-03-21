@@ -36,18 +36,16 @@ all() ->
 
 groups() ->
     [{emqx_storm, [sequence],
-      [ storm_t
-      %% , datasync_t
-      %% , sys_t
+      [storm_t
+      , sys_t
+      , datasync_t
       ]}].
 
 init_per_suite(Config) ->
     dbg:start(),
     dbg:tracer(),
     dbg:p(all, c),
-    dbg:tpl(emqx_storm_datasync, all_bridges, x),
-    dbg:tpl(emqx_storm_datasync, add_bridge, x),
-    dbg:tpl(emqx_storm, return, x),
+    dbg:tpl(emqx_storm_datasync, delete, x),
     application:load(emqx_storm),
     [start_apps(App, SchemaFile, ConfigFile) ||
         {App, SchemaFile, ConfigFile}
@@ -60,11 +58,12 @@ init_per_suite(Config) ->
     Config.
 
 end_per_suite(_Config) ->
-    [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]].
+    [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]],
+    mnesia:delete_table(bridges).
 
 storm_t(_Config) ->
-    test_sys(),
-    %% test_datasync(),
+    %% test_sys(),
+    test_datasync(),
     ok.
 
 receive_response() ->
@@ -123,6 +122,10 @@ test_datasync() ->
                                        bridge_params()), 1),
     ?assert(receive_response()),
     {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"add">>,
+                                       bridge_params()), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
                 C, ?CONTROL, construct(datasync, <<"lookup">>,
                                        [{id, <<"bridge_id">>}]), 1),
     ?assert(receive_response()),
@@ -130,7 +133,32 @@ test_datasync() ->
                 C, ?CONTROL, construct(datasync, <<"update">>,
                                        bridge_params(<<"bridge_name2">>)), 1),
     ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"lookup">>,
+                                       [{id, <<"bridge_id">>}]), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"start">>,
+                                       [{id, <<"bridge_id">>}]), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"status">>,
+                                       <<>>), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"stop">>,
+                                       [{id, <<"bridge_id">>}]), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"create">>,
+                                       bridge_params(<<"bridge_name3">>)), 1),
+    ?assert(receive_response()),
+    {ok, _} = emqx_client:publish(
+                C, ?CONTROL, construct(datasync, <<"delete">>,
+                                       [{id, <<"bridge_id">>}]), 1),
+    ?assert(receive_response()),
     ok = emqx_client:disconnect(C).
+
 
 construct(Type, Action, Payload) ->
     TupleList = [{tid, <<"111">>},
@@ -172,7 +200,7 @@ bridge_params(BridgeName) ->
         <<"PSK-AES128-CBC-SHA,PSK-AES256-CBC-SHA,PSK-3DES-EDE-CBC-SHA,PSK-RC4-SHA">>},
        {<<"tls_versions">>,<<"tlsv1.2,tlsv1.1,tlsv1">>}]},
      {<<"start_type">>,<<"manual">>},
-     {<<"subscription">>,
+     {<<"subscriptions">>,
       [[{<<"topic">>,<<"topic/1">>},{<<"qos">>,1}],
        [{<<"topic">>,<<"topic/2">>},{<<"qos">>,1}]]}].
 
@@ -205,7 +233,9 @@ datasync_t(_Config) ->
                   end, ?BRIDGES),
     ?assertEqual(3, length(Parse(emqx_storm_datasync:all_bridges()))),
     emqx_storm_datasync:update_bridge(bridge1_id, bridge1_name, [{address, "127.0.0.4"}]),
-    ?assertEqual({bridge1_name, [{address, "127.0.0.4"}]},
+    ?assertEqual([{id,bridge1_id},
+                  {name,bridge1_name},
+                  {address,"127.0.0.4"}],
                  Parse(emqx_storm_datasync:lookup(#{id => bridge1_id}))),
     emqx_storm_datasync:delete(#{id => bridge3_id}),
     ?assertEqual(2, length(Parse(emqx_storm_datasync:list(#{})))),
@@ -215,9 +245,6 @@ datasync_t(_Config) ->
     emqx_storm_datasync:stop(#{id => test_id}),
     ?assertEqual([], Parse(emqx_storm_datasync:status(#{}))),
     ok.
-
-bridge_json() ->
-    <<"{\"address\":\"127.0.0.1:1883\",\"clean_start\":true,\"client_id\":\"bridge_aws\",\"username\":\"user\",\"forwards\":[\"topic1/#\",\"topic2/#\"],\"keepalive\":\"60s\",\"max_inflight_batches\":32,\"mountpoint\":\"bridge/aws/${node}/\",\"password\":\"passwd\",\"proto_ver\":\"mqttv4\",\"queue\":{\"batch_count_limit\":32,\"batch_bytes_limit\":\"1000MB\",\"replayq_dir\":\"data/emqx_bridge/\",\"replayq_seg_bytes\":\"10MB\"},\"reconnect_interval\":\"30s\",\"retry_interval\":\"20s\",\"ssl\":\"off\",\"ssl_opt\":{\"cacertfile\":\"etc/certs/cacert.pem\",\"certfile\":\"etc/certs/client-cert.pem\",\"keyfile\":\"etc/certs/client-key.pem\",\"ciphers\":\"ECDHE-ECDSA-AES256-GCM-SHA384,ECDHE-RSA-AES256-GCM-SHA384\",\"psk_ciphers\":\"PSK-AES128-CBC-SHA,PSK-AES256-CBC-SHA,PSK-3DES-EDE-CBC-SHA,PSK-RC4-SHA\",\"tls_versions\":\"tlsv1.2,tlsv1.1,tlsv1\"},\"start_type\":\"manual\",\"subscription\":[{\"topic\":\"topic/1\",\"qos\":1},{\"topic\":\"topic/2\",\"qos\":1}]}">>.
 
 bridge_spec() ->
     [{address,"127.0.0.1:1883"},
