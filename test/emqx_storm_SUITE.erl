@@ -26,6 +26,9 @@
 -define(BRIDGE2, {bridge2, [{address, "127.0.0.2"}]}).
 -define(BRIDGE3, {bridge3, [{address, "127.0.0.3"}]}).
 
+-define(CONTROL, <<"storm/control/qg3rgewt135">>).
+-define(ACK, <<"storm/ack/qg3rgewt135">>).
+
 -define(BRIDGES, [?BRIDGE1, ?BRIDGE2, ?BRIDGE3]).
 
 all() ->
@@ -33,11 +36,29 @@ all() ->
 
 groups() ->
     [{emqx_storm, [sequence],
-      [storm_t,
-       datasync_t,
-       sys_t]}].
+      [ storm_t
+      , datasync_t
+      , sys_t]}].
 
 init_per_suite(Config) ->
+    dbg:start(),
+    dbg:tracer(),
+    dbg:p(all, c),
+    %% dbg:tpl(emqx_storm, start_link, x),
+    %% dbg:tpl(emqx_storm, init, x),
+    %% dbg:tpl(emqx_client, subscribe, x),
+    %% dbg:tpl(emqx_storm, handle_msg, x),
+    %% dbg:tpl(emqx_storm, handle_payload, x),
+    %% dbg:tpl(emqx_storm, handle_request, x),
+    %% dbg:tpl(emqx_storm_sys, stats, x),
+    %% dbg:tpl(emqx_storm, encode_result, x),
+    dbg:tpl(emqx_storm, make_rsp_msg, x),
+    %% dbg:tpl(emqx_storm, return, x),
+    %% dbg:tpl(emqx_storm, restruct, x),
+    dbg:tpl(emqx_storm, send_response, x),
+    dbg:tpl(emqx_client, publish, x),
+    %% dbg:tpl(emqx_client, eval_msg_handler, x),
+    dbg:tpl(emqx_client, publish_process, x),
     application:load(emqx_storm),
     [start_apps(App, SchemaFile, ConfigFile) ||
         {App, SchemaFile, ConfigFile}
@@ -53,12 +74,46 @@ end_per_suite(_Config) ->
     [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]].
 
 storm_t(_Config) ->
+    test_sys(),
+    test_datasync(),
     ok.
+
+receive_response() ->
+    receive
+        {publish, Msg} ->
+            ct:log("Msg: ~p", [Msg]),
+            Msg;
+        OtherMsg ->
+            ct:log("OtherMsg: ~p", [OtherMsg]),
+            receive_response()
+    after 100 ->
+            ct:log("No msg fetched")
+    end.
+
+test_sys() ->
+    ct:print("start test sys"),
+    {ok, C} = emqx_client:start_link(),
+    {ok, _} = emqx_client:connect(C),
+    {ok, _, [1]} = emqx_client:subscribe(C, ?ACK, qos1),
+    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"stats">>, <<>>), 1),
+    {ok, _} = emqx_client:publish(C, ?ACK, construct(sys, <<"stats">>, <<>>), 1),
+    ct:print("start test sys"),
+    receive_response(),
+    ok = emqx_client:disconnect(C).
+
+test_datasync() ->
+    ok.
+
+construct(sys, Action, _Payload) ->
+    Tuple = [{tid, <<"111">>},
+             {type, <<"sys">>},
+             {action, Action}],
+    emqx_json:encode(Tuple).
 
 sys_t(_Config) ->
     Param = #{node => node()},
     lists:foreach(fun(Value) ->
-                          assertmatch_sys_t(Value)
+                      assertmatch_sys_t(Value)
                   end,
                   [emqx_storm_sys:nodes(Param),
                    emqx_storm_sys:stats(Param),
@@ -66,8 +121,7 @@ sys_t(_Config) ->
                    {meta, emqx_storm_sys:connections(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
                    {meta, emqx_storm_sys:sessions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
                    {meta, emqx_storm_sys:topics(Param#{'_page' => <<"1">>, '_limit' => <<"20">>})},
-                   {meta, emqx_storm_sys:subscriptions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})}
-                  ]),
+                   {meta, emqx_storm_sys:subscriptions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})}]),
     ok.
 
 assertmatch_sys_t({meta, Value}) ->
@@ -77,11 +131,11 @@ assertmatch_sys_t(Value) ->
 
 datasync_t(_Config) ->
     Parse= fun({ok, ValueList}) ->
-                   proplists:get_value(data, ValueList)
+               proplists:get_value(data, ValueList)
            end,
     ?assertEqual([], Parse(emqx_storm_datasync:list(#{}))),
     lists:foreach(fun({Id, Options}) ->
-                          emqx_storm_datasync:add_bridge(Id, Options)
+                      emqx_storm_datasync:add_bridge(Id, Options)
                   end, ?BRIDGES),
     %% ct:log("~p", [ets:tab2list(bridges)]),
     ?assertEqual(3, length(Parse(emqx_storm_datasync:all_bridges()))),
@@ -150,5 +204,7 @@ read_schema_configs(App, SchemaFile, ConfigFile) ->
     Vals = proplists:get_value(App, NewConfig, []),
     [application:set_env(App, Par, Value) || {Par, Value} <- Vals].
 
+set_special_configs(emqx_storm) ->
+    application:set_env(emqx_storm, host, "127.0.0.1");
 set_special_configs(_App) ->
     ok.
