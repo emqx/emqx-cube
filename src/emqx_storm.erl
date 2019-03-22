@@ -16,6 +16,8 @@
 
 -behaviour(gen_statem).
 
+-emqx_plugin(?MODULE).
+
 -include("emqx_storm.hrl").
 -include_lib("emqx/include/emqx_client.hrl").
 -include_lib("emqx/include/logger.hrl").
