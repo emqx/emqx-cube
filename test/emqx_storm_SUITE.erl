@@ -62,7 +62,7 @@ end_per_suite(_Config) ->
     mnesia:delete_table(bridges).
 
 storm_t(_Config) ->
-    %% test_sys(),
+    test_sys(),
     test_datasync(),
     ok.
 
@@ -233,45 +233,13 @@ datasync_t(_Config) ->
                   end, ?BRIDGES),
     ?assertEqual(3, length(Parse(emqx_storm_datasync:all_bridges()))),
     emqx_storm_datasync:update_bridge(bridge1_id, bridge1_name, [{address, "127.0.0.4"}]),
-    ?assertEqual([{id,bridge1_id},
-                  {name,bridge1_name},
-                  {address,"127.0.0.4"}],
+    ?assertEqual([{address,"127.0.0.4"}],
                  Parse(emqx_storm_datasync:lookup(#{id => bridge1_id}))),
     emqx_storm_datasync:delete(#{id => bridge3_id}),
     ?assertEqual(2, length(Parse(emqx_storm_datasync:list(#{})))),
-    emqx_storm_datasync:add_bridge(test_id, test_name, bridge_spec()),
-    emqx_storm_datasync:start(#{id => test_id}),
-    ?assertEqual([{test_name, connected}], Parse(emqx_storm_datasync:status(#{}))),
-    emqx_storm_datasync:stop(#{id => test_id}),
+    emqx_storm_datasync:add_bridge(test_id, test_name, bridge_params()),
     ?assertEqual([], Parse(emqx_storm_datasync:status(#{}))),
     ok.
-
-bridge_spec() ->
-    [{address,"127.0.0.1:1883"},
-     {clean_start,true},
-     {client_id,"bridge_aws"},
-     {connect_module,emqx_bridge_mqtt},
-     {forwards,["topic1/#","topic2/#"]},
-     {keepalive,60000},
-     {max_inflight_batches,32},
-     {mountpoint,"bridge/aws/${node}/"},
-     {password,"passwd"},
-     {proto_ver,v4},
-     {queue,
-      #{batch_bytes_limit => 1048576000,batch_count_limit => 32,
-        replayq_dir => "data/emqx_aws_bridge/",
-        replayq_seg_bytes => 10485760}},
-     {reconnect_delay_ms,30000},
-     {retry_interval,20000},
-     {ssl,false},
-     {ssl_opts,
-      [{versions,['tlsv1.2','tlsv1.1',tlsv1]},
-       [{keyfile,"etc/certs/client-key.pem"},
-        [{certfile,"etc/certs/client-cert.pem"},
-         [{cacertfile,"etc/certs/cacert.pem"},[]]]]]},
-     {start_type,manual},
-     {subscriptions,[{"cmd/topic1",1},{"cmd/topic2",1}]},
-     {username,"user"}].
 
 start_apps(App, SchemaFile, ConfigFile) ->
     read_schema_configs(App, SchemaFile, ConfigFile),
