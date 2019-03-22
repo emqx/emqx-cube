@@ -42,10 +42,6 @@ groups() ->
       ]}].
 
 init_per_suite(Config) ->
-    dbg:start(),
-    dbg:tracer(),
-    dbg:p(all, c),
-    dbg:tpl(emqx_storm_datasync, delete, x),
     application:load(emqx_storm),
     [start_apps(App, SchemaFile, ConfigFile) ||
         {App, SchemaFile, ConfigFile}
