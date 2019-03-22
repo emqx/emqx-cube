@@ -65,20 +65,19 @@ list(_Bindings) ->
     all_bridges().
 
 update(BridgeSpec = #{id := Id, name := Name}) ->
-    ret(update_bridge(Id, Name, trans_opts(BridgeSpec))).
+    ret(update_bridge(Id, Name, BridgeSpec)).
 
 lookup(#{id := Id}) ->
     {ok, case lookup_bridge(Id) of
              ?NO_BRIDGE ->
                  [{code, ?ERROR4}];
-             {Id, Name, Options} ->
-                 NewOptions = restore_opts(Options),
+             {_Id, _Name, Options} ->
                  [{code, ?SUCCESS},
-                  {data, [{id, Id}, {name, Name}] ++ NewOptions}]
+                  {data, Options}]
          end}.
 
 add(BridgeSpec = #{id := Id, name := Name}) ->
-    ret(add_bridge(Id, Name, trans_opts(BridgeSpec))).
+    ret(add_bridge(Id, Name, BridgeSpec)).
 
 delete(#{id := Id}) ->
     ret(remove_bridge(Id)).
@@ -87,7 +86,7 @@ start(#{id := Id}) ->
     start_bridge(Id).
 
 create(BridgeSpec = #{id := Id, name := Name}) ->
-    case add_bridge(Id, Name, trans_opts(BridgeSpec)) of
+    case add_bridge(Id, Name, BridgeSpec) of
         {atomic, ok} ->
             start_bridge(Id);
         {aborted, Error} ->
@@ -146,7 +145,7 @@ remove_bridge(Id) ->
 start_bridge(Id) ->
     StartBridge = fun(Name, Options) ->
                           Name1 = maybe_b2a(Name),
-                          Options1 = proplists:delete(name, Options),
+                          Options1 = trans_opts(Options),
                           emqx_bridge_sup:create_bridge(Name1, Options1),
                           try emqx_bridge:ensure_started(Name1) of
                               ok -> [{code, ?SUCCESS},
@@ -257,27 +256,32 @@ trans_opts([{subscriptions, Subscriptions} | RestProps], Acc) ->
                                  end,
                                  Subscriptions),
     trans_opts(RestProps, [{subscriptions, NewSubscriptions} | Acc]);
+trans_opts([{id, _Id} | RestProps], Acc) ->
+    trans_opts(RestProps, Acc);
+trans_opts([{name, _Name} | RestProps], Acc) ->
+    trans_opts(RestProps, Acc);
 trans_opts([Prop | RestProps], Acc) ->
     trans_opts(RestProps, [Prop | Acc]).
 
-restore_opts(Options)->
-    restore_opts(Options, []).
+%% restore_opts(Options)->
+%%     restore_opts(Options, []).
 
-restore_opts([], Acc) ->
-    Acc;
-restore_opts([{queue, QOpts} | RestOpts], Acc) ->
-    restore_opts(RestOpts, [{queue, maps:to_list(QOpts)} | Acc]);
-restore_opts([{subscriptions, Subs} | RestOpts], Acc) ->
-    NewSubs = lists:foreach(fun({Topic, QoS}) ->
-                                    [{<<"topic">>, list_to_binary(Topic)},
-                                     {<<"qos">>, QoS}]
-                            end, Subs),
-    restore_opts(RestOpts, [{subscriptions, NewSubs}| Acc]);
-restore_opts([{forwards, Forwards} | RestOpts], Acc) ->
-    NewForwards = lists:map(fun(OldForwards) -> list_to_binary(OldForwards) end, Forwards),    
-    restore_opts(RestOpts, [{forwards, NewForwards} | Acc]);
-restore_opts([Options | RestOpts], Acc) ->
-    restore_opts(RestOpts, [Options | Acc]).
+%% restore_opts([], Acc) ->
+%%     Acc;
+%% restore_opts([{queue, QOpts} | RestOpts], Acc) ->
+%%     restore_opts(RestOpts, [{queue, maps:to_list(QOpts)} | Acc]);
+%% restore_opts([{subscriptions, Subs} | RestOpts], Acc) ->
+%%     NewSubs = lists:foreach(fun({Topic, QoS}) ->
+%%                                     [{<<"topic">>, list_to_binary(Topic)},
+%%                                      {<<"qos">>, QoS}]
+%%                             end, Subs),
+%%     restore_opts(RestOpts, [{subscriptions, NewSubs}| Acc]);
+%% restore_opts([{forwards, Forwards} | RestOpts], Acc) ->
+%%     NewForwards = lists:map(fun(OldForwards) -> list_to_binary(OldForwards) end, Forwards),    
+%%     restore_opts(RestOpts, [{forwards, NewForwards} | Acc]);
+%% restore_opts([Options | RestOpts], Acc) ->
+%%     restore_opts(RestOpts, [Options | Acc]
+
 
 maybe_b2a(Value) when is_binary(Value) ->
     b2a(Value);
