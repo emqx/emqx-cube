@@ -250,13 +250,19 @@ trans_opts([{reconnect_interval, ReconnectInterval} | RestProps], Acc) ->
 trans_opts([{retry_interval, RetryInterval} | RestProps], Acc) ->
     trans_opts(RestProps, [{retry_interval, cuttlefish_duration:parse(b2l(RetryInterval))} | Acc]);
 trans_opts([{ssl, SslFlag} | RestProps], Acc) ->
-    trans_opts(RestProps, [{ssl, cuttlefish_flag:parse(b2a(SslFlag)) } | Acc]);
+    trans_opts(RestProps, [{ssl,
+                            case SslFlag of
+                                Bool when is_boolean(Bool) -> Bool;
+                                _Flag -> cuttlefish_flag:parse(b2a(SslFlag))
+                            end} | Acc]);
 trans_opts([{ssl_opt, SslOpt} | RestProps], Acc) ->
     trans_opts(RestProps, [{ssl_opt, SslOpt} | Acc]);
 trans_opts([{start_type, StartType} | RestProps], Acc) ->
     trans_opts(RestProps, [{start_type, b2a(StartType)} | Acc]);
 trans_opts([{subscriptions, Subscriptions} | RestProps], Acc) ->
-    NewSubscriptions = lists:map(fun([{_Topic, Topic}, {_QoS, QoS}]) ->
+    NewSubscriptions = lists:map(fun(Subscription) ->
+                                         Topic = proplists:get_value(<<"topic">>, Subscription),
+                                         QoS = proplists:get_value(<<"qos">>, Subscription),
                                          {b2l(Topic), QoS}
                                  end,
                                  Subscriptions),
