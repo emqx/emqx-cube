@@ -256,6 +256,8 @@ b2l(B) -> binary_to_list(B).
 
 l2a(L) -> list_to_atom(L).
 
+convert([{}]) ->
+    convert([]);
 convert(<<>>) ->
     convert([]);
 convert(RawArgs) when is_list(RawArgs) ->
