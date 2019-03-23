@@ -89,6 +89,8 @@ create(BridgeSpec = #{id := Id, name := Name}) ->
     case add_bridge(Id, Name, BridgeSpec) of
         {atomic, ok} ->
             start_bridge(Id);
+        {aborted, existed} ->
+            start_bridge(Id);
         {aborted, Error} ->
             {ok, [{code, ?ERROR4}, {data, Error}]}
     end.
