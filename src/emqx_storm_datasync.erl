@@ -102,9 +102,9 @@ status(_Bindings) ->
 -spec(all_bridges() -> list()).
 all_bridges() -> 
     try ets:tab2list(?TAB) of
-        Result -> 
+        Bridges ->
             {ok, [{code, ?SUCCESS},
-                  {data, Result}]}
+                  {data, [Bridge ||{_Id, _Name, Bridge} <- Bridges]}]}
     catch
         _Error:_Reason ->
             {ok, [{code, ?ERROR4}]}
@@ -152,10 +152,12 @@ start_bridge(Id) ->
                                      {data, <<"Start bridge successfully">>}];
                               connected -> [{code, ?SUCCESS},
                                             {data, <<"Bridge already started">>}];
-                              _ -> [{code, ?ERROR4},
+                              _ -> ?LOG(error, "Start bridge: ~p failed", [Name]),
+                                   [{code, ?ERROR4},
                                     {data, <<"Start bridge failed">>}]
                           catch
                               _Error:_Reason ->
+                                  ?LOG(error, "Start bridge: ~p failed", [Name]),
                                   [{code, ?ERROR4},
                                    {data, <<"Start bridge failed">>}]
                           end
@@ -187,6 +189,7 @@ handle_lookup(Id, Handler) ->
         {_Id, Name, Options} ->
             Handler(Name, Options);
         _Error ->
+            ?LOG(error, "Bridge[~p] not found", [Id]),
             [{code, ?ERROR4},
              {data, <<"bridge_not_found">>}]
     end.
