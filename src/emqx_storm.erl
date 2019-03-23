@@ -41,6 +41,8 @@
         , b2l/1
         ]).
 
+-export([handle_payload/2]).
+
 -import(proplists, [ get_value/3
                    , delete/2]).
 
