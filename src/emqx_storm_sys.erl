@@ -16,6 +16,7 @@
 
 -export([ nodes/1
         , stats/1
+        , broker/1
         , metrics/1
         , connections/1
         , sessions/1
@@ -31,6 +32,9 @@ stats(Bindings = #{node := _Node}) ->
     emqx_mgmt_api_stats:lookup(Bindings, params);
 stats(Bindings) ->
     emqx_mgmt_api_stats:lookup(Bindings#{node => node()}, params).
+
+broker(Bindings) ->
+    emqx_mgmt_api_brokers:get(Bindings#{node => node()}, params).
 
 metrics(_Bindings) ->
     emqx_mgmt:return({ok, emqx_metrics:all()}).
