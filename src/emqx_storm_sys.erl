@@ -16,22 +16,28 @@
 
 -export([ nodes/1
         , stats/1
+        , broker/1
         , metrics/1
         , connections/1
         , sessions/1
         , topics/1
         , subscriptions/1]).
 
+nodes(Bindings = #{node := _Node}) ->
+    emqx_mgmt_api_nodes:get(Bindings, params);
 nodes(Bindings) ->
-    emqx_mgmt_api_nodes:get(Bindings, params).
+    emqx_mgmt_api_nodes:get(Bindings#{node => node()}, params).
 
 stats(Bindings = #{node := _Node}) ->
     emqx_mgmt_api_stats:lookup(Bindings, params);
 stats(Bindings) ->
     emqx_mgmt_api_stats:lookup(Bindings#{node => node()}, params).
 
-metrics(Bindings) ->
-    emqx_mgmt_api_metrics:list(Bindings, params).
+broker(Bindings) ->
+    emqx_mgmt_api_brokers:get(Bindings#{node => node()}, params).
+
+metrics(_Bindings) ->
+    emqx_mgmt:return({ok, emqx_metrics:all()}).
 
 connections(Bindings = #{'_page':= PageNum, '_limit' := Limit})->
     emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(PageNum, Limit));

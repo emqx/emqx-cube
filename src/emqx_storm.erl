@@ -16,6 +16,8 @@
 
 -behaviour(gen_statem).
 
+-emqx_plugin(?MODULE).
+
 -include("emqx_storm.hrl").
 -include_lib("emqx/include/emqx_client.hrl").
 -include_lib("emqx/include/logger.hrl").
@@ -38,6 +40,8 @@
         , b2a/1
         , b2l/1
         ]).
+
+-export([handle_payload/2]).
 
 -import(proplists, [ get_value/3
                    , delete/2]).
@@ -94,7 +98,7 @@ connecting(enter, _, #{reconnect_delay_ms := Timeout} = State) ->
         {ok, ConnRef, ConnPid} ->
             ?LOG(info, "Storm ~p connected", [name(storm)]),
             Action = {state_timeout, 0, connected},
-            {keep_state, State#{conn_ref => ConnRef, conn_pid => ConnPid}, Action};
+            {keep_state, State#{conn_ref => ConnRef, connection => ConnPid}, Action};
         _Error ->
             Action = {state_timeout, Timeout, reconnect},
             {keep_state_and_data, Action}
@@ -112,7 +116,7 @@ connected(enter, _OldState, _State) ->
     keep_state_and_data;
 connected(info, {disconnected, ConnRef, Reason},
           #{conn_ref := ConnRefCurrent,
-            conn_pid := ConnPid} = State) ->
+            connection := ConnPid} = State) ->
     case ConnRefCurrent =:= ConnRef of
         true ->
             ?LOG(info, "Storm ~p diconnected ~n reason=~p", [name(storm), ConnPid, Reason]),
@@ -254,6 +258,8 @@ b2l(B) -> binary_to_list(B).
 
 l2a(L) -> list_to_atom(L).
 
+convert([{}]) ->
+    convert([]);
 convert(<<>>) ->
     convert([]);
 convert(RawArgs) when is_list(RawArgs) ->

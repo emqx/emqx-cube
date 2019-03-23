@@ -89,6 +89,8 @@ create(BridgeSpec = #{id := Id, name := Name}) ->
     case add_bridge(Id, Name, BridgeSpec) of
         {atomic, ok} ->
             start_bridge(Id);
+        {aborted, existed} ->
+            start_bridge(Id);
         {aborted, Error} ->
             {ok, [{code, ?ERROR4}, {data, Error}]}
     end.
@@ -102,9 +104,9 @@ status(_Bindings) ->
 -spec(all_bridges() -> list()).
 all_bridges() -> 
     try ets:tab2list(?TAB) of
-        Result -> 
+        Bridges ->
             {ok, [{code, ?SUCCESS},
-                  {data, Result}]}
+                  {data, [Bridge ||{_Id, _Name, Bridge} <- Bridges]}]}
     catch
         _Error:_Reason ->
             {ok, [{code, ?ERROR4}]}
@@ -145,17 +147,19 @@ remove_bridge(Id) ->
 start_bridge(Id) ->
     StartBridge = fun(Name, Options) ->
                           Name1 = maybe_b2a(Name),
-                          Options1 = trans_opts(Options),
+                          Options1 = trans_opts(maps:to_list(Options)),
                           emqx_bridge_sup:create_bridge(Name1, Options1),
                           try emqx_bridge:ensure_started(Name1) of
                               ok -> [{code, ?SUCCESS},
                                      {data, <<"Start bridge successfully">>}];
                               connected -> [{code, ?SUCCESS},
                                             {data, <<"Bridge already started">>}];
-                              _ -> [{code, ?ERROR4},
+                              _ -> ?LOG(error, "Start bridge: ~p failed", [Name]),
+                                   [{code, ?ERROR4},
                                     {data, <<"Start bridge failed">>}]
                           catch
                               _Error:_Reason ->
+                                  ?LOG(error, "Start bridge: ~p failed", [Name]),
                                   [{code, ?ERROR4},
                                    {data, <<"Start bridge failed">>}]
                           end
@@ -187,6 +191,7 @@ handle_lookup(Id, Handler) ->
         {_Id, Name, Options} ->
             Handler(Name, Options);
         _Error ->
+            ?LOG(error, "Bridge[~p] not found", [Id]),
             [{code, ?ERROR4},
              {data, <<"bridge_not_found">>}]
     end.
@@ -245,13 +250,19 @@ trans_opts([{reconnect_interval, ReconnectInterval} | RestProps], Acc) ->
 trans_opts([{retry_interval, RetryInterval} | RestProps], Acc) ->
     trans_opts(RestProps, [{retry_interval, cuttlefish_duration:parse(b2l(RetryInterval))} | Acc]);
 trans_opts([{ssl, SslFlag} | RestProps], Acc) ->
-    trans_opts(RestProps, [{ssl, cuttlefish_flag:parse(b2a(SslFlag)) } | Acc]);
+    trans_opts(RestProps, [{ssl,
+                            case SslFlag of
+                                Bool when is_boolean(Bool) -> Bool;
+                                _Flag -> cuttlefish_flag:parse(b2a(SslFlag))
+                            end} | Acc]);
 trans_opts([{ssl_opt, SslOpt} | RestProps], Acc) ->
     trans_opts(RestProps, [{ssl_opt, SslOpt} | Acc]);
 trans_opts([{start_type, StartType} | RestProps], Acc) ->
     trans_opts(RestProps, [{start_type, b2a(StartType)} | Acc]);
 trans_opts([{subscriptions, Subscriptions} | RestProps], Acc) ->
-    NewSubscriptions = lists:map(fun([{_Topic, Topic}, {_QoS, QoS}]) ->
+    NewSubscriptions = lists:map(fun(Subscription) ->
+                                         Topic = proplists:get_value(<<"topic">>, Subscription),
+                                         QoS = proplists:get_value(<<"qos">>, Subscription),
                                          {b2l(Topic), QoS}
                                  end,
                                  Subscriptions),
@@ -262,26 +273,6 @@ trans_opts([{name, _Name} | RestProps], Acc) ->
     trans_opts(RestProps, Acc);
 trans_opts([Prop | RestProps], Acc) ->
     trans_opts(RestProps, [Prop | Acc]).
-
-%% restore_opts(Options)->
-%%     restore_opts(Options, []).
-
-%% restore_opts([], Acc) ->
-%%     Acc;
-%% restore_opts([{queue, QOpts} | RestOpts], Acc) ->
-%%     restore_opts(RestOpts, [{queue, maps:to_list(QOpts)} | Acc]);
-%% restore_opts([{subscriptions, Subs} | RestOpts], Acc) ->
-%%     NewSubs = lists:foreach(fun({Topic, QoS}) ->
-%%                                     [{<<"topic">>, list_to_binary(Topic)},
-%%                                      {<<"qos">>, QoS}]
-%%                             end, Subs),
-%%     restore_opts(RestOpts, [{subscriptions, NewSubs}| Acc]);
-%% restore_opts([{forwards, Forwards} | RestOpts], Acc) ->
-%%     NewForwards = lists:map(fun(OldForwards) -> list_to_binary(OldForwards) end, Forwards),    
-%%     restore_opts(RestOpts, [{forwards, NewForwards} | Acc]);
-%% restore_opts([Options | RestOpts], Acc) ->
-%%     restore_opts(RestOpts, [Options | Acc]
-
 
 maybe_b2a(Value) when is_binary(Value) ->
     b2a(Value);
