@@ -183,9 +183,7 @@ connect(Config = #{control_topic := ControlTopic}) ->
 name(Id) -> list_to_atom(lists:concat([?MODULE, "_", Id])).
 
 make_msg_handler(Config, Parent, Ref) ->
-    #{publish => fun(Msg) -> 
-                     handle_msg(Msg, Config)
-                 end,
+    #{publish => fun(Msg) -> handle_msg(Msg, Config) end,
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
 

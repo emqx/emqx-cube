@@ -37,7 +37,7 @@ broker(Bindings) ->
     emqx_mgmt_api_brokers:get(Bindings#{node => node()}, params).
 
 metrics(_Bindings) ->
-    emqx_mgmt:return({ok, emqx_metrics:all()}).
+    minirest:return({ok, emqx_metrics:all()}).
 
 connections(Bindings = #{'_page':= PageNum, '_limit' := Limit})->
     emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(PageNum, Limit));
