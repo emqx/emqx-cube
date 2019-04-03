@@ -36,9 +36,9 @@ all() ->
 
 groups() ->
     [{emqx_storm, [sequence],
-      [storm_t
+      [ datasync_t
+      , storm_t
       , sys_t
-      , datasync_t
       ]}].
 
 init_per_suite(Config) ->
@@ -54,8 +54,8 @@ init_per_suite(Config) ->
     Config.
 
 end_per_suite(_Config) ->
-    [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]],
-    mnesia:delete_table(bridges).
+    mnesia:delete_table(bridges),
+    [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]].
 
 storm_t(_Config) ->
     test_sys(),
@@ -227,6 +227,7 @@ datasync_t(_Config) ->
     lists:foreach(fun({Id, Name, Options}) ->
                       emqx_storm_datasync:add_bridge(Id, Name, Options)
                   end, ?BRIDGES),
+    ct:log("All bridges: ~p", [ets:tab2list(bridges)]),
     ?assertEqual(3, length(Parse(emqx_storm_datasync:all_bridges()))),
     emqx_storm_datasync:update_bridge(bridge1_id, bridge1_name, [{address, "127.0.0.4"}]),
     ?assertEqual([{address,"127.0.0.4"}],

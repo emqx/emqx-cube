@@ -106,7 +106,7 @@ all_bridges() ->
     try ets:tab2list(?TAB) of
         Bridges ->
             {ok, [{code, ?SUCCESS},
-                  {data, [Bridge ||{_Id, _Name, Bridge} <- Bridges]}]}
+                  {data, [Bridge ||{_TabName, _Id, _Name, Bridge} <- Bridges]}]}
     catch
         _Error:_Reason ->
             {ok, [{code, ?ERROR4}]}
