@@ -168,8 +168,14 @@ start_bridge(Id) ->
     
 -spec(bridge_status() -> list()).
 bridge_status() ->
+    BridgesStatus = [[{id, Id},
+                      {status, case Status of
+                                   standing_by -> disconnected;
+                                   Status0 -> Status0
+                               end}]
+                     || {Id, Status} <- emqx_bridge_sup:bridges()],
     {ok, [{code, ?SUCCESS},
-          {data, emqx_bridge_sup:bridges()}]}.
+          {data, BridgesStatus}]}.
 
 -spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
 stop_bridge(Id) ->
