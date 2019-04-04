@@ -182,7 +182,7 @@ stop_bridge(Id) ->
     DropBridge = fun(Name, _Options) ->
                      Name1 = maybe_b2a(Name),
                      case emqx_bridge_sup:drop_bridge(Name1) of
-                         ok -> 
+                         ok ->
                              [{code, ?SUCCESS},
                               {data, <<"stop bridge successfully">>}];
                          _Error ->
