@@ -193,10 +193,11 @@ make_msg_handler(Config, Parent, Ref) ->
       puback => fun(_Ack) -> ok end,
       disconnected => fun(Reason) -> Parent ! {disconnected, Ref, Reason} end}.
 
-handle_msg(#{topic     := ControlTopic,
-             payload   := Payload},
-           #{control_topic := ControlTopic,
-             ack_topic  := RspTopic}) ->
+handle_msg(Msg = #{topic     := ControlTopic,
+                   payload   := Payload},
+           Config = #{control_topic := ControlTopic,
+                      ack_topic  := RspTopic}) ->
+    ?LOG(debug, "[EMQ X Storm] Handled message: ~p ~n, Config: ~p", [Msg, Config]),
     handle_payload(Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.
@@ -210,6 +211,7 @@ handle_payload(Payload, RspTopic) ->
                      {ok, RspPayload} = encode_result([{code, ?ERROR1}], []),
                      make_rsp_msg(RspTopic, RspPayload)
              end,
+    ?LOG(debug, "[EMQ X Storm] Response message: ~p", [RspMsg]),
     ok = send_response(RspMsg).
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
