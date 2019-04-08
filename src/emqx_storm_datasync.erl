@@ -140,29 +140,29 @@ do_update_bridge(Bridge = #?TAB{id = Id}) ->
 
 -spec(remove_bridge(atom()) -> ok | {error, any()}).
 remove_bridge(Id) ->
-    mnesia:transaction(fun mnesia:delete/1,
-                       [{?TAB, Id}]).
+    emqx_bridge_sup:drop_bridge(Id),
+    mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
 -spec(start_bridge(atom()) -> {ok, list()}).
 start_bridge(Id) ->
-    StartBridge = fun(Name, Options) ->
-                          Name1 = maybe_b2a(Name),
-                          Options1 = trans_opts(maps:to_list(Options)),
-                          emqx_bridge_sup:create_bridge(Name1, Options1),
-                          try emqx_bridge:ensure_started(Name1) of
-                              ok -> [{code, ?SUCCESS},
-                                     {data, <<"Start bridge successfully">>}];
-                              connected -> [{code, ?SUCCESS},
-                                            {data, <<"Bridge already started">>}];
-                              _ -> ?LOG(error, "Start bridge: ~p failed", [Name]),
-                                   [{code, ?ERROR4},
-                                    {data, <<"Start bridge failed">>}]
-                          catch
-                              _Error:_Reason ->
-                                  ?LOG(error, "Start bridge: ~p failed", [Name]),
-                                  [{code, ?ERROR4},
-                                   {data, <<"Start bridge failed">>}]
-                          end
+    StartBridge = fun(Options) ->
+                      Id1 = maybe_b2a(Id),
+                      Options1 = trans_opts(maps:to_list(Options)),
+                      emqx_bridge_sup:create_bridge(Id1, Options1),
+                      try emqx_bridge:ensure_started(Id1) of
+                          ok -> [{code, ?SUCCESS},
+                                 {data, <<"Start bridge successfully">>}];
+                          connected -> [{code, ?SUCCESS},
+                                        {data, <<"Bridge already started">>}];
+                          _ -> ?LOG(error, "Start bridge: ~p failed", [Id]),
+                               [{code, ?ERROR4},
+                                {data, <<"Start bridge failed">>}]
+                      catch
+                           _Error:_Reason ->
+                               ?LOG(error, "Start bridge: ~p failed", [Id]),
+                               [{code, ?ERROR4},
+                                {data, <<"Start bridge failed">>}]
+                      end
                   end,
     {ok, handle_lookup(Id, StartBridge)}.
     
@@ -179,23 +179,18 @@ bridge_status() ->
 
 -spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
 stop_bridge(Id) ->
-    DropBridge = fun(Name, _Options) ->
-                     Name1 = maybe_b2a(Name),
-                     case emqx_bridge_sup:drop_bridge(Name1) of
-                         ok ->
-                             [{code, ?SUCCESS},
-                              {data, <<"stop bridge successfully">>}];
-                         _Error ->
-                             [{code, ?ERROR4},
-                              {data, <<"stop bridge failed">>}]
-                     end
+    DropBridge = fun(_Options) ->
+                     Id1 = maybe_b2a(Id),
+                     emqx_bridge:ensure_stopped(Id1),
+                     [{code, ?SUCCESS},
+                      {data, <<"stop bridge successfully">>}]
                  end,
     {ok, handle_lookup(Id, DropBridge)}.
 
 handle_lookup(Id, Handler) ->
     case lookup_bridge(Id) of
-        {_Id, Name, Options} ->
-            Handler(Name, Options);
+        {_Id, _Name, Options} ->
+            Handler(Options);
         _Error ->
             ?LOG(error, "Bridge[~p] not found", [Id]),
             [{code, ?ERROR4},
