@@ -4,7 +4,7 @@
        {ref,"f3560ffa7bac936a92e33ec9ce36bd53da15807f"}},
   1},
  {<<"cowboy">>,{pkg,<<"cowboy">>,<<"2.6.1">>},1},
- {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.7.0">>},2},
+ {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.7.1">>},2},
  {<<"cuttlefish">>,
   {git,"https://github.com/emqx/cuttlefish",
        {ref,"44e3e18df63247117995340002664eef16714cec"}},
@@ -65,7 +65,7 @@
 [
 {pkg_hash,[
  {<<"cowboy">>, <<"F2E06F757C337B3B311F9437E6E072B678FCD71545A7B2865BDAA154D078593F">>},
- {<<"cowlib">>, <<"3EF16E77562F9855A2605900CEDB15C1462D76FB1BE6A32FC3AE91973EE543D2">>},
+ {<<"cowlib">>, <<"EE7CB7F5F7E85B6266C498E379FC865F647B9104491DBB1E35EA1F8BBE60BC1B">>},
  {<<"gproc">>, <<"CEA02C578589C61E5341FCE149EA36CCEF236CC2ECAC8691FBA408E7EA77EC2F">>},
  {<<"jsx">>, <<"D2F6E5F069C00266CAD52FB15D87C428579EA4D7D73A33669E12679E203329DD">>},
  {<<"meck">>, <<"FFEDB39F99B0B99703B8601C6F17C7F76313EE12DE6B646E671E3188401F7866">>},
