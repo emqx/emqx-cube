@@ -39,7 +39,9 @@
         , b2l/1
         ]).
 
--export([handle_payload/2]).
+-export([ encode_result/2
+        , make_rsp_msg/2
+        , send_response/1]).
 
 -import(proplists, [ get_value/3
                    , delete/2]).
@@ -205,7 +207,7 @@ handle_msg(_Msg, _Interaction) ->
 handle_payload(Payload, RspTopic) ->
     RspMsg = case emqx_json:safe_decode(Payload) of
                  {ok, Req} ->
-                     {ok, RspPayload} = handle_request(Req),
+                     {ok, RspPayload} = handle_request(Req, RspTopic),
                      make_rsp_msg(RspTopic, RspPayload);
                  {error, _Reason} ->
                      {ok, RspPayload} = encode_result([{code, ?ERROR1}], []),
@@ -237,13 +239,14 @@ send_response(Msg) ->
                    end),
     ok.
 
-handle_request(Req) ->
+handle_request(Req, RspTopic) ->
     Type = b2l(get_value(<<"type">>, Req, <<>>)),
     Fun = b2a(get_value(<<"action">>, Req, <<>>)),
     RawArgs = get_value(<<"payload">>, Req, []),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
-    try Module:Fun(Args) of
+    try Module:Fun(Args#{ rsp_topic => RspTopic
+                        , storm_client => self()}) of
         {ok, Result} ->
             encode_result(Result, Req)
     catch
