@@ -140,7 +140,7 @@ do_update_bridge(Bridge = #?TAB{id = Id}) ->
 
 -spec(remove_bridge(atom()) -> ok | {error, any()}).
 remove_bridge(Id) ->
-    emqx_bridge_sup:drop_bridge(Id),
+    emqx_bridge_sup:drop_bridge(maybe_b2a(Id)),
     mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
 -spec(start_bridge(atom()) -> {ok, list()}).
@@ -154,11 +154,14 @@ start_bridge(Id) ->
                                  {data, <<"Start bridge successfully">>}];
                           connected -> [{code, ?SUCCESS},
                                         {data, <<"Bridge already started">>}];
-                          _ -> ?LOG(error, "Start bridge: ~p failed", [Id]),
+                          _ ->
+                              remove_bridge(Id),
+                              ?LOG(error, "Start bridge: ~p failed", [Id]),
                                [{code, ?ERROR4},
                                 {data, <<"Start bridge failed">>}]
                       catch
                            _Error:_Reason ->
+                              remove_bridge(Id),
                                ?LOG(error, "Start bridge: ~p failed", [Id]),
                                [{code, ?ERROR4},
                                 {data, <<"Start bridge failed">>}]
