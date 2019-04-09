@@ -90,6 +90,7 @@ create(BridgeSpec = #{id := Id, name := Name}) ->
         {atomic, ok} ->
             start_bridge(Id);
         {aborted, existed} ->
+            update_bridge(Id, Name, BridgeSpec),
             start_bridge(Id);
         {aborted, Error} ->
             {ok, [{code, ?ERROR4}, {data, Error}]}
