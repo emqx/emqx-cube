@@ -282,10 +282,10 @@ convert([], Acc) ->
 convert([{K, V} | RestProps], Acc) ->
     convert(RestProps, [{b2a(K), V} | Acc]).
 
-return(#{code := Code, data := Data}) when is_map(Data) ->
-    [{<<"code">>, Code}, {<<"payload">>, maps:to_list(Data)}];
 return(#{code := 0, data := Data}) ->
     [{<<"code">>, ?SUCCESS}, {<<"payload">>, Data}];
+return(#{code := Code, data := Data}) when is_map(Data) ->
+    [{<<"code">>, Code}, {<<"payload">>, maps:to_list(Data)}];
 return(#{code := Code, data := Data}) ->
     [{<<"code">>, Code}, {<<"payload">>, Data}];
 return(#{code := Code}) ->
