@@ -25,7 +25,7 @@
                     , b2l/1
                     , encode_result/2
                     , make_rsp_msg/2
-                    , send_response/1
+                    , send_response/2
                     ]).
 
 -ifdef(TEST).
@@ -67,14 +67,20 @@ mnesia(copy) ->
 list(_Bindings) ->
     all_bridges().
 
-update(BridgeSpec = #{id := Id}) ->
-    case emqx_bridge_sup:is_bridge_exist(maybe_b2a(Id)) of
-        true ->
-            remove_bridge(Id),
-            create(BridgeSpec);
-        false ->
-            remove_bridge(Id),
-            add(BridgeSpec)
+update(BridgeSpec = #{id := Id, name := Name}) ->
+    emqx_bridge_sup:drop_bridge(maybe_b2a(Name)),
+    update_bridge(Id, Name, BridgeSpec),
+    post_start_bridge(fun(_Id) -> ok end, BridgeSpec).
+
+-spec(update_bridge(list(), list(), list()) -> {ok, list()}).
+update_bridge(Id, Name, Options) ->
+    Bridge = #?TAB{id = Id, name = Name, options = Options},
+    mnesia:transaction(fun do_update_bridge/1, [Bridge]).
+
+do_update_bridge(Bridge = #?TAB{id = Id}) ->
+    case mnesia:read(?TAB, Id) of
+        [_|_] -> mnesia:write(Bridge);
+        [] -> mnesia:abort(noexisted)
     end.
 
 lookup(#{id := Id}) ->
@@ -83,22 +89,33 @@ lookup(#{id := Id}) ->
                  [{code, ?ERROR4}];
              {_Id, _Name, Options} ->
                  [{code, ?SUCCESS},
-                  {data, proplists:delete(rsp_topic, Options)}]
+                  {data, maps:without([rsp_topic, storm_pid], Options)}]
          end}.
 
 add(BridgeSpec = #{id := Id, name := Name}) ->
-    ret(add_bridge(Id, Name, BridgeSpec)).
+    ret(add_bridge(Id, Name, maps:remove(storm_pid, BridgeSpec))).
 
 delete(#{id := Id}) ->
     ret(remove_bridge(Id)).
 
 start(BridgeSpec) ->
-    start_bridge(BridgeSpec).
+    post_start_bridge(fun(_Id) -> ok end, BridgeSpec).
+
+post_start_bridge(PostAction, BridgeSpec = #{id := Id}) ->
+    case start_bridge(BridgeSpec) of
+        {ok, failed} ->
+            PostAction(Id),
+            ?LOG(error, "Bridge failed to start, Id : ~p", [Id]),
+            {ok, [{code, ?ERROR4},
+                  {data, <<"Start bridge failed">>}]};
+        RetValue ->
+            RetValue
+    end.
 
 create(BridgeSpec = #{id := Id, name := Name}) ->
     case add_bridge(Id, Name, BridgeSpec) of
         {atomic, ok} ->
-            start_bridge(BridgeSpec);
+            post_start_bridge(fun remove_bridge/1, BridgeSpec);
         {aborted, existed} ->
             update(BridgeSpec);
         {aborted, Error} ->
@@ -137,47 +154,41 @@ insert_bridge(Bridge = #?TAB{id = Id}) ->
         [_ | _] -> mnesia:abort(existed)
     end.
 
--spec(remove_bridge(atom()) -> ok | {error, any()}).
+-spec(remove_bridge(Id :: atom()) -> ok | {error, any()}).
 remove_bridge(Id) ->
-    emqx_bridge_sup:drop_bridge(maybe_b2a(Id)),
+    handle_lookup(Id, fun(Name, _Options) ->
+                              emqx_bridge_sup:drop_bridge(maybe_b2a(Name))
+                      end),
     mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
 -spec(start_bridge(map()) -> {ok, list()}).
-start_bridge(#{ id := Id
-              , rsp_topic := RspTopic}) ->
+start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
     BridgeHandler = fun(Status) ->
                         {ok, RspPayload}
-                                = encode_result([ {tid, Id}
-                                                , {type, <<"datasync">>}
-                                                , {action, <<"status">>}
-                                                , {code, 200}
-                                                , {data,
-                                                   #{ id => Id
-                                                    , status => Status}}
-                                                ], []),
+                                = encode_result([ {code, 200}
+                                                , {data, #{ id => Id
+                                                          , status => Status}}
+                                                ], [ {tid, Id}
+                                                   , {type, <<"datasync">>}
+                                                   , {action, <<"status">>}]),
                         RspMsg = make_rsp_msg(RspTopic, RspPayload),
-                        ok = send_response(RspMsg)
+                        ok = send_response(RspMsg, StormPid)
                     end,
-    StartBridge = fun(Options) ->
-                      Id1 = maybe_b2a(Id),
-                      Options1 = trans_opts(maps:to_list(Options)),
-                      emqx_bridge_sup:create_bridge(Id1, Options1#{bridge_handler => BridgeHandler}),
-                      try emqx_bridge:ensure_started(Id1) of
+    StartBridge = fun(Name, Options) ->
+                      Name1 = maybe_b2a(Name),
+                      Options1 = trans_opts(maps:to_list(Options), Name),
+                      emqx_bridge_sup:create_bridge(Name1, Options1#{bridge_handler => BridgeHandler}),
+                      try emqx_bridge:ensure_started(Name1) of
                           ok -> [{code, ?SUCCESS},
                                  {data, <<"Start bridge successfully">>}];
                           connected -> [{code, ?SUCCESS},
                                         {data, <<"Bridge already started">>}];
                           _ ->
-                              remove_bridge(Id),
-                              ?LOG(error, "Start bridge: ~p failed", [Id]),
-                              [{code, ?ERROR4},
-                               {data, <<"Start bridge failed">>}]
+                              failed
+
                       catch
                           _Error:_Reason ->
-                              remove_bridge(Id),
-                              ?LOG(error, "Start bridge: ~p failed", [Id]),
-                              [{code, ?ERROR4},
-                               {data, <<"Start bridge failed">>}]
+                              failed
                       end
                   end,
     {ok, handle_lookup(Id, StartBridge)}.
@@ -195,18 +206,23 @@ bridge_status() ->
 
 -spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
 stop_bridge(Id) ->
-    DropBridge = fun(_Options) ->
-                     Id1 = maybe_b2a(Id),
-                     emqx_bridge:ensure_stopped(Id1),
-                     [{code, ?SUCCESS},
-                      {data, <<"stop bridge successfully">>}]
+    DropBridge = fun(Name, _Options) ->
+                     Name1 = maybe_b2a(Name),
+                     case emqx_bridge:ensure_stopped(Name1) of
+                         ok ->
+                             [{code, ?SUCCESS},
+                              {data, <<"stop bridge successfully">>}];
+                         {error, _Error} ->
+                             [{code, ?ERROR4},
+                              {data, <<"stop bridge failed">>}]
+                     end
                  end,
     {ok, handle_lookup(Id, DropBridge)}.
 
 handle_lookup(Id, Handler) ->
     case lookup_bridge(Id) of
-        {_Id, _Name, Options} ->
-            Handler(Options);
+        {_Id, Name, Options} ->
+            Handler(Name, Options);
         _Error ->
             ?LOG(error, "Bridge[~p] not found", [Id]),
             [{code, ?ERROR4},
@@ -228,70 +244,77 @@ lookup_bridge(Id) ->
 ret({atomic, ok})     -> {ok, [{code, ?SUCCESS}]};
 ret({aborted, Error}) -> {ok, [{code, ?ERROR4}, {data, Error}]}.
 
-trans_opts(RawArgs) when is_map(RawArgs) ->
-    trans_opts(maps:to_list(RawArgs));
-trans_opts(RawArgs) when is_list(RawArgs) ->
-    trans_opts(RawArgs, []).
+trans_opts(RawArgs, Name) when is_map(RawArgs) ->
+    trans_opts(maps:to_list(RawArgs), Name);
+trans_opts(RawArgs, Name) when is_list(RawArgs) ->
+    trans_opts(RawArgs, [], Name).
 
-trans_opts([], Acc) ->
-    [{connect_module, emqx_bridge_mqtt} | Acc];
-trans_opts([{address, Address} | RestProps], Acc) ->
-    trans_opts(RestProps, [{address, binary_to_list(Address)} | Acc]);
-trans_opts([{forwards, Forwards} | RestProps], Acc) ->
+trans_opts([], Acc, _Name) ->
+    Acc1 = maps:from_list(Acc),
+    Acc1#{ connect_module => emqx_bridge_mqtt};
+trans_opts([{address, Address} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{address, binary_to_list(Address)} | Acc], Name);
+trans_opts([{forwards, Forwards} | RestProps], Acc, Name) ->
     NewForwards = lists:map(fun(OldForwards) -> binary_to_list(OldForwards) end, Forwards),
-    trans_opts(RestProps, [{forwards, NewForwards} | Acc]);
-trans_opts([{keepalive, KeepAlive} | RestProps], Acc) ->
-    trans_opts(RestProps, [{keepalive, cuttlefish_duration:parse(b2l(KeepAlive), s)} | Acc]);
-trans_opts([{max_inflight_batches, MaxInflightBatches} | RestProps], Acc) ->
-    trans_opts(RestProps, [{max_inflight_batches, MaxInflightBatches} | Acc]);
-trans_opts([{proto_ver, ProtoVer} | RestProps], Acc) ->
+    trans_opts(RestProps, [{forwards, NewForwards} | Acc], Name);
+trans_opts([{keepalive, KeepAlive} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{keepalive, cuttlefish_duration:parse(b2l(KeepAlive), s)} | Acc], Name);
+trans_opts([{max_inflight_batches, MaxInflightBatches} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{max_inflight_batches, MaxInflightBatches} | Acc], Name);
+trans_opts([{proto_ver, ProtoVer} | RestProps], Acc, Name) ->
     NewProtoVer = case ProtoVer of
                       <<"mqttv3">> -> v3;
                       <<"mqttv4">> -> v4;
                       <<"mqttv5">> -> v5
                   end,
-    trans_opts(RestProps, [{proto_ver, NewProtoVer} | Acc]);
-trans_opts([{queue, QueueOpts} | RestProps], Acc) ->
+    trans_opts(RestProps, [{proto_ver, NewProtoVer} | Acc], Name);
+trans_opts([{queue, QueueOpts} | RestProps], Acc, Name) ->
     NewQueueOpts = lists:map(fun({<<"batch_count_limit">>, BatchCountLimit}) ->
-                                     {batch_count_limit, BatchCountLimit};
+                                     {batch_count_limit, maybe_b2i(BatchCountLimit)};
                                 ({<<"batch_bytes_limit">>, BatchBytesLimit}) ->
                                      {batch_bytes_limit, cuttlefish_bytesize:parse(b2l(BatchBytesLimit))};
                                 ({<<"replayq_dir">>, ReplayqDir}) ->
-                                     {replayq_dir, b2l(ReplayqDir)};
+                                     ReplayqDir1 = <<ReplayqDir/binary, Name/binary>>,
+                                     {replayq_dir, b2l(ReplayqDir1)};
                                 ({<<"replayq_seg_bytes">>, ReplaySegBytes}) ->
                                      {replayq_seg_bytes, cuttlefish_bytesize:parse(b2l(ReplaySegBytes))}
                              end, QueueOpts),
-    trans_opts(RestProps, [{queue, maps:from_list(NewQueueOpts)} | Acc]);
-trans_opts([{reconnect_interval, ReconnectInterval} | RestProps], Acc) ->
-    trans_opts(RestProps, [{reconnect_interval, cuttlefish_duration:parse(b2l(ReconnectInterval))} | Acc]);
-trans_opts([{retry_interval, RetryInterval} | RestProps], Acc) ->
-    trans_opts(RestProps, [{retry_interval, cuttlefish_duration:parse(b2l(RetryInterval))} | Acc]);
-trans_opts([{ssl, SslFlag} | RestProps], Acc) ->
+    trans_opts(RestProps, [{queue, maps:from_list(NewQueueOpts)} | Acc], Name);
+trans_opts([{reconnect_interval, ReconnectInterval} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{reconnect_interval, cuttlefish_duration:parse(b2l(ReconnectInterval))} | Acc], Name);
+trans_opts([{retry_interval, RetryInterval} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{retry_interval, cuttlefish_duration:parse(b2l(RetryInterval))} | Acc], Name);
+trans_opts([{ssl, SslFlag} | RestProps], Acc, Name) ->
     trans_opts(RestProps, [{ssl,
                             case SslFlag of
                                 Bool when is_boolean(Bool) -> Bool;
-                                _Flag -> cuttlefish_flag:parse(b2a(SslFlag))
-                            end} | Acc]);
-trans_opts([{ssl_opt, SslOpt} | RestProps], Acc) ->
-    trans_opts(RestProps, [{ssl_opt, SslOpt} | Acc]);
-trans_opts([{start_type, StartType} | RestProps], Acc) ->
-    trans_opts(RestProps, [{start_type, b2a(StartType)} | Acc]);
-trans_opts([{subscriptions, Subscriptions} | RestProps], Acc) ->
+                                _Flag -> cuttlefish_flag:parse(maybe_b2a(SslFlag))
+                            end} | Acc], Name);
+trans_opts([{ssl_opt, SslOpt} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{ssl_opt, SslOpt} | Acc], Name);
+trans_opts([{start_type, StartType} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{start_type, maybe_b2a(StartType)} | Acc], Name);
+trans_opts([{subscriptions, Subscriptions} | RestProps], Acc, Name) ->
     NewSubscriptions = lists:map(fun(Subscription) ->
                                          Topic = proplists:get_value(<<"topic">>, Subscription),
                                          QoS = proplists:get_value(<<"qos">>, Subscription),
                                          {b2l(Topic), QoS}
                                  end,
                                  Subscriptions),
-    trans_opts(RestProps, [{subscriptions, NewSubscriptions} | Acc]);
-trans_opts([{id, _Id} | RestProps], Acc) ->
-    trans_opts(RestProps, Acc);
-trans_opts([{name, _Name} | RestProps], Acc) ->
-    trans_opts(RestProps, Acc);
-trans_opts([Prop | RestProps], Acc) ->
-    trans_opts(RestProps, [Prop | Acc]).
+    trans_opts(RestProps, [{subscriptions, NewSubscriptions} | Acc], Name);
+trans_opts([{id, _Id} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, Acc, Name);
+trans_opts([{name, _Name} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, Acc, Name);
+trans_opts([Prop | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [Prop | Acc], Name).
 
 maybe_b2a(Value) when is_binary(Value) ->
     b2a(Value);
 maybe_b2a(Value) ->
     Value.
+
+maybe_b2i(Value) ->
+    try binary_to_integer(Value)
+    catch _Error:_Reason -> 32
+    end.
