@@ -245,8 +245,7 @@ handle_request(Req, RspTopic) ->
     RawArgs = get_value(<<"payload">>, Req, []),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
-    try Module:Fun(Args#{ rsp_topic => RspTopic
-                        , storm_client => self()}) of
+    try Module:Fun(Args#{ rsp_topic => RspTopic }) of
         {ok, Result} ->
             encode_result(Result, Req)
     catch
@@ -257,7 +256,7 @@ handle_request(Req, RspTopic) ->
             ?LOG(error, "[EMQ X Storm] ~p is wrong action", [Module]),
             encode_result([{code, ?ERROR3}], Req);
         Error:Reason ->
-            ?LOG(error, "[EMQ X Storm] Error: ~p, Reason: ~p", [Error, Reason]),
+            ?LOG(error, "[EMQ X Storm] Error: ~p, Reason: ~p, Args: ~p", [Error, Reason, Args]),
             encode_result([{code, ?ERROR5}], Req)
     end.
 

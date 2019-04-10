@@ -83,7 +83,7 @@ lookup(#{id := Id}) ->
                  [{code, ?ERROR4}];
              {_Id, _Name, Options} ->
                  [{code, ?SUCCESS},
-                  {data, proplists:delete(rsp_topic, Options)}]
+                  {data, maps:remove(rsp_topic, Options)}]
          end}.
 
 add(BridgeSpec = #{id := Id, name := Name}) ->
@@ -234,7 +234,7 @@ trans_opts(RawArgs) when is_list(RawArgs) ->
     trans_opts(RawArgs, []).
 
 trans_opts([], Acc) ->
-    [{connect_module, emqx_bridge_mqtt} | Acc];
+    maps:from_list([{connect_module, emqx_bridge_mqtt} | Acc]);
 trans_opts([{address, Address} | RestProps], Acc) ->
     trans_opts(RestProps, [{address, binary_to_list(Address)} | Acc]);
 trans_opts([{forwards, Forwards} | RestProps], Acc) ->
