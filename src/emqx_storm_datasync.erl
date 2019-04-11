@@ -197,9 +197,14 @@ bridge_status() ->
 stop_bridge(Id) ->
     DropBridge = fun(_Options) ->
                      Id1 = maybe_b2a(Id),
-                     emqx_bridge:ensure_stopped(Id1),
-                     [{code, ?SUCCESS},
-                      {data, <<"stop bridge successfully">>}]
+                     case emqx_bridge:ensure_stopped(Id1) of
+                         ok ->
+                             [{code, ?SUCCESS},
+                              {data, <<"stop bridge successfully">>}];
+                         {error, _Error} ->
+                             [{code, ?ERROR4},
+                              {data, <<"stop bridge failed">>}]
+                     end
                  end,
     {ok, handle_lookup(Id, DropBridge)}.
 
@@ -253,7 +258,7 @@ trans_opts([{proto_ver, ProtoVer} | RestProps], Acc) ->
     trans_opts(RestProps, [{proto_ver, NewProtoVer} | Acc]);
 trans_opts([{queue, QueueOpts} | RestProps], Acc) ->
     NewQueueOpts = lists:map(fun({<<"batch_count_limit">>, BatchCountLimit}) ->
-                                     {batch_count_limit, BatchCountLimit};
+                                     {batch_count_limit, maybe_b2i(BatchCountLimit)};
                                 ({<<"batch_bytes_limit">>, BatchBytesLimit}) ->
                                      {batch_bytes_limit, cuttlefish_bytesize:parse(b2l(BatchBytesLimit))};
                                 ({<<"replayq_dir">>, ReplayqDir}) ->
@@ -295,3 +300,8 @@ maybe_b2a(Value) when is_binary(Value) ->
     b2a(Value);
 maybe_b2a(Value) ->
     Value.
+
+maybe_b2i(Value) ->
+    try binary_to_integer(Value)
+    catch _Error:_Reason -> 32
+    end.
