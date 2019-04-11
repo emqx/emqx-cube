@@ -23,6 +23,9 @@
 
 -import(emqx_storm, [ b2a/1
                     , b2l/1
+                    , encode_result/2
+                    , make_rsp_msg/2
+                    , send_response/1
                     ]).
 
 -ifdef(TEST).
@@ -64,8 +67,15 @@ mnesia(copy) ->
 list(_Bindings) ->
     all_bridges().
 
-update(BridgeSpec = #{id := Id, name := Name}) ->
-    ret(update_bridge(Id, Name, BridgeSpec)).
+update(BridgeSpec = #{id := Id}) ->
+    case emqx_bridge_sup:is_bridge_exist(maybe_b2a(Id)) of
+        true ->
+            remove_bridge(Id),
+            create(BridgeSpec);
+        false ->
+            remove_bridge(Id),
+            add(BridgeSpec)
+    end.
 
 lookup(#{id := Id}) ->
     {ok, case lookup_bridge(Id) of
@@ -73,7 +83,7 @@ lookup(#{id := Id}) ->
                  [{code, ?ERROR4}];
              {_Id, _Name, Options} ->
                  [{code, ?SUCCESS},
-                  {data, Options}]
+                  {data, maps:remove(rsp_topic, Options)}]
          end}.
 
 add(BridgeSpec = #{id := Id, name := Name}) ->
@@ -82,15 +92,15 @@ add(BridgeSpec = #{id := Id, name := Name}) ->
 delete(#{id := Id}) ->
     ret(remove_bridge(Id)).
 
-start(#{id := Id}) ->
-    start_bridge(Id).
+start(BridgeSpec) ->
+    start_bridge(BridgeSpec).
 
 create(BridgeSpec = #{id := Id, name := Name}) ->
     case add_bridge(Id, Name, BridgeSpec) of
         {atomic, ok} ->
-            start_bridge(Id);
+            start_bridge(BridgeSpec);
         {aborted, existed} ->
-            start_bridge(Id);
+            update(BridgeSpec);
         {aborted, Error} ->
             {ok, [{code, ?ERROR4}, {data, Error}]}
     end.
@@ -127,69 +137,76 @@ insert_bridge(Bridge = #?TAB{id = Id}) ->
         [_ | _] -> mnesia:abort(existed)
     end.
 
--spec(update_bridge(list(), list(), list()) -> {ok, list()}).
-update_bridge(Id, Name, Options) ->
-    Bridge = #?TAB{id = Id, name = Name, options = Options},
-    mnesia:transaction(fun do_update_bridge/1, [Bridge]).
-
-do_update_bridge(Bridge = #?TAB{id = Id}) ->
-    case mnesia:read(?TAB, Id) of
-        [_|_] -> mnesia:write(Bridge);
-        [] -> mnesia:abort(noexisted)
-    end.
-
 -spec(remove_bridge(atom()) -> ok | {error, any()}).
 remove_bridge(Id) ->
-    mnesia:transaction(fun mnesia:delete/1,
-                       [{?TAB, Id}]).
+    emqx_bridge_sup:drop_bridge(maybe_b2a(Id)),
+    mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
--spec(start_bridge(atom()) -> {ok, list()}).
-start_bridge(Id) ->
-    StartBridge = fun(Name, Options) ->
-                          Name1 = maybe_b2a(Name),
-                          Options1 = trans_opts(maps:to_list(Options)),
-                          emqx_bridge_sup:create_bridge(Name1, Options1),
-                          try emqx_bridge:ensure_started(Name1) of
-                              ok -> [{code, ?SUCCESS},
-                                     {data, <<"Start bridge successfully">>}];
-                              connected -> [{code, ?SUCCESS},
-                                            {data, <<"Bridge already started">>}];
-                              _ -> ?LOG(error, "Start bridge: ~p failed", [Name]),
-                                   [{code, ?ERROR4},
-                                    {data, <<"Start bridge failed">>}]
-                          catch
-                              _Error:_Reason ->
-                                  ?LOG(error, "Start bridge: ~p failed", [Name]),
-                                  [{code, ?ERROR4},
-                                   {data, <<"Start bridge failed">>}]
-                          end
+-spec(start_bridge(map()) -> {ok, list()}).
+start_bridge(#{ id := Id
+              , rsp_topic := RspTopic}) ->
+    BridgeHandler = fun(Status) ->
+                        {ok, RspPayload}
+                                = encode_result([ {tid, Id}
+                                                , {type, <<"datasync">>}
+                                                , {action, <<"status">>}
+                                                , {code, 200}
+                                                , {data,
+                                                   #{ id => Id
+                                                    , status => Status}}
+                                                ], []),
+                        RspMsg = make_rsp_msg(RspTopic, RspPayload),
+                        ok = send_response(RspMsg)
+                    end,
+    StartBridge = fun(Options) ->
+                      Id1 = maybe_b2a(Id),
+                      Options1 = trans_opts(maps:to_list(Options)),
+                      emqx_bridge_sup:create_bridge(Id1, Options1#{bridge_handler => BridgeHandler}),
+                      try emqx_bridge:ensure_started(Id1) of
+                          ok -> [{code, ?SUCCESS},
+                                 {data, <<"Start bridge successfully">>}];
+                          connected -> [{code, ?SUCCESS},
+                                        {data, <<"Bridge already started">>}];
+                          _ ->
+                              remove_bridge(Id),
+                              ?LOG(error, "Start bridge: ~p failed", [Id]),
+                              [{code, ?ERROR4},
+                               {data, <<"Start bridge failed">>}]
+                      catch
+                          _Error:_Reason ->
+                              remove_bridge(Id),
+                              ?LOG(error, "Start bridge: ~p failed", [Id]),
+                              [{code, ?ERROR4},
+                               {data, <<"Start bridge failed">>}]
+                      end
                   end,
     {ok, handle_lookup(Id, StartBridge)}.
     
 -spec(bridge_status() -> list()).
 bridge_status() ->
+    BridgesStatus = [[{id, Id},
+                      {status, case Status of
+                                   standing_by -> disconnected;
+                                   Status0 -> Status0
+                               end}]
+                     || {Id, Status} <- emqx_bridge_sup:bridges()],
     {ok, [{code, ?SUCCESS},
-          {data, emqx_bridge_sup:bridges()}]}.
+          {data, BridgesStatus}]}.
 
 -spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
 stop_bridge(Id) ->
-    DropBridge = fun(Name, _Options) ->
-                     Name1 = maybe_b2a(Name),
-                     case emqx_bridge_sup:drop_bridge(Name1) of
-                         ok -> 
-                             [{code, ?SUCCESS},
-                              {data, <<"stop bridge successfully">>}];
-                         _Error ->
-                             [{code, ?ERROR4},
-                              {data, <<"stop bridge failed">>}]
-                     end
+    DropBridge = fun(_Options) ->
+                     Id1 = maybe_b2a(Id),
+                     emqx_bridge:ensure_stopped(Id1),
+                     [{code, ?SUCCESS},
+                      {data, <<"stop bridge successfully">>}]
                  end,
     {ok, handle_lookup(Id, DropBridge)}.
 
 handle_lookup(Id, Handler) ->
     case lookup_bridge(Id) of
-        {_Id, Name, Options} ->
-            Handler(Name, Options);
+        {_Id, _Name, Options} ->
+            Handler(Options);
         _Error ->
             ?LOG(error, "Bridge[~p] not found", [Id]),
             [{code, ?ERROR4},
@@ -217,7 +234,7 @@ trans_opts(RawArgs) when is_list(RawArgs) ->
     trans_opts(RawArgs, []).
 
 trans_opts([], Acc) ->
-    [{connect_module, emqx_bridge_mqtt} | Acc];
+    maps:from_list([{connect_module, emqx_bridge_mqtt} | Acc]);
 trans_opts([{address, Address} | RestProps], Acc) ->
     trans_opts(RestProps, [{address, binary_to_list(Address)} | Acc]);
 trans_opts([{forwards, Forwards} | RestProps], Acc) ->
