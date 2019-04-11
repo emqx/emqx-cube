@@ -197,9 +197,14 @@ bridge_status() ->
 stop_bridge(Id) ->
     DropBridge = fun(_Options) ->
                      Id1 = maybe_b2a(Id),
-                     emqx_bridge:ensure_stopped(Id1),
-                     [{code, ?SUCCESS},
-                      {data, <<"stop bridge successfully">>}]
+                     case emqx_bridge:ensure_stopped(Id1) of
+                         ok ->
+                             [{code, ?SUCCESS},
+                              {data, <<"stop bridge successfully">>}];
+                         {error, _Error} ->
+                             [{code, ?ERROR4},
+                              {data, <<"stop bridge failed">>}]
+                     end
                  end,
     {ok, handle_lookup(Id, DropBridge)}.
 
