@@ -68,7 +68,8 @@ list(_Bindings) ->
     all_bridges().
 
 update(BridgeSpec = #{id := Id, name := Name}) ->
-    ret(update_bridge(Id, Name, BridgeSpec)).
+    update_bridge(Id, Name, BridgeSpec),
+    create(BridgeSpec).
 
 -spec(update_bridge(list(), list(), list()) -> {ok, list()}).
 update_bridge(Id, Name, Options) ->
@@ -174,11 +175,11 @@ start_bridge(#{ id := Id
                         RspMsg = make_rsp_msg(RspTopic, RspPayload),
                         ok = send_response(RspMsg)
                     end,
-    StartBridge = fun(Options) ->
-                      Id1 = maybe_b2a(Id),
-                      Options1 = trans_opts(maps:to_list(Options)),
-                      emqx_bridge_sup:create_bridge(Id1, Options1#{bridge_handler => BridgeHandler}),
-                      try emqx_bridge:ensure_started(Id1) of
+    StartBridge = fun(Name, Options) ->
+                      Name1 = maybe_b2a(Name),
+                      Options1 = trans_opts(maps:to_list(Options), Name),
+                      emqx_bridge_sup:create_bridge(Name1, Options1#{bridge_handler => BridgeHandler}),
+                      try emqx_bridge:ensure_started(Name1) of
                           ok -> [{code, ?SUCCESS},
                                  {data, <<"Start bridge successfully">>}];
                           connected -> [{code, ?SUCCESS},
@@ -206,9 +207,9 @@ bridge_status() ->
 
 -spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
 stop_bridge(Id) ->
-    DropBridge = fun(_Options) ->
-                     Id1 = maybe_b2a(Id),
-                     case emqx_bridge:ensure_stopped(Id1) of
+    DropBridge = fun(Name, _Options) ->
+                     Name1 = maybe_b2a(Name),
+                     case emqx_bridge:ensure_stopped(Name1) of
                          ok ->
                              [{code, ?SUCCESS},
                               {data, <<"stop bridge successfully">>}];
@@ -221,8 +222,8 @@ stop_bridge(Id) ->
 
 handle_lookup(Id, Handler) ->
     case lookup_bridge(Id) of
-        {_Id, _Name, Options} ->
-            Handler(Options);
+        {_Id, Name, Options} ->
+            Handler(Name, Options);
         _Error ->
             ?LOG(error, "Bridge[~p] not found", [Id]),
             [{code, ?ERROR4},
@@ -244,68 +245,69 @@ lookup_bridge(Id) ->
 ret({atomic, ok})     -> {ok, [{code, ?SUCCESS}]};
 ret({aborted, Error}) -> {ok, [{code, ?ERROR4}, {data, Error}]}.
 
-trans_opts(RawArgs) when is_map(RawArgs) ->
-    trans_opts(maps:to_list(RawArgs));
-trans_opts(RawArgs) when is_list(RawArgs) ->
-    trans_opts(RawArgs, []).
+trans_opts(RawArgs, Name) when is_map(RawArgs) ->
+    trans_opts(maps:to_list(RawArgs), Name);
+trans_opts(RawArgs, Name) when is_list(RawArgs) ->
+    trans_opts(RawArgs, [], Name).
 
-trans_opts([], Acc) ->
+trans_opts([], Acc, _Name) ->
     maps:from_list([{connect_module, emqx_bridge_mqtt} | Acc]);
-trans_opts([{address, Address} | RestProps], Acc) ->
-    trans_opts(RestProps, [{address, binary_to_list(Address)} | Acc]);
-trans_opts([{forwards, Forwards} | RestProps], Acc) ->
+trans_opts([{address, Address} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{address, binary_to_list(Address)} | Acc], Name);
+trans_opts([{forwards, Forwards} | RestProps], Acc, Name) ->
     NewForwards = lists:map(fun(OldForwards) -> binary_to_list(OldForwards) end, Forwards),
-    trans_opts(RestProps, [{forwards, NewForwards} | Acc]);
-trans_opts([{keepalive, KeepAlive} | RestProps], Acc) ->
-    trans_opts(RestProps, [{keepalive, cuttlefish_duration:parse(b2l(KeepAlive), s)} | Acc]);
-trans_opts([{max_inflight_batches, MaxInflightBatches} | RestProps], Acc) ->
-    trans_opts(RestProps, [{max_inflight_batches, MaxInflightBatches} | Acc]);
-trans_opts([{proto_ver, ProtoVer} | RestProps], Acc) ->
+    trans_opts(RestProps, [{forwards, NewForwards} | Acc], Name);
+trans_opts([{keepalive, KeepAlive} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{keepalive, cuttlefish_duration:parse(b2l(KeepAlive), s)} | Acc], Name);
+trans_opts([{max_inflight_batches, MaxInflightBatches} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{max_inflight_batches, MaxInflightBatches} | Acc], Name);
+trans_opts([{proto_ver, ProtoVer} | RestProps], Acc, Name) ->
     NewProtoVer = case ProtoVer of
                       <<"mqttv3">> -> v3;
                       <<"mqttv4">> -> v4;
                       <<"mqttv5">> -> v5
                   end,
-    trans_opts(RestProps, [{proto_ver, NewProtoVer} | Acc]);
-trans_opts([{queue, QueueOpts} | RestProps], Acc) ->
+    trans_opts(RestProps, [{proto_ver, NewProtoVer} | Acc], Name);
+trans_opts([{queue, QueueOpts} | RestProps], Acc, Name) ->
     NewQueueOpts = lists:map(fun({<<"batch_count_limit">>, BatchCountLimit}) ->
                                      {batch_count_limit, maybe_b2i(BatchCountLimit)};
                                 ({<<"batch_bytes_limit">>, BatchBytesLimit}) ->
                                      {batch_bytes_limit, cuttlefish_bytesize:parse(b2l(BatchBytesLimit))};
                                 ({<<"replayq_dir">>, ReplayqDir}) ->
-                                     {replayq_dir, b2l(ReplayqDir)};
+                                     ReplayqDir1 = <<ReplayqDir/binary, Name/binary>>,
+                                     {replayq_dir, b2l(ReplayqDir1)};
                                 ({<<"replayq_seg_bytes">>, ReplaySegBytes}) ->
                                      {replayq_seg_bytes, cuttlefish_bytesize:parse(b2l(ReplaySegBytes))}
                              end, QueueOpts),
-    trans_opts(RestProps, [{queue, maps:from_list(NewQueueOpts)} | Acc]);
-trans_opts([{reconnect_interval, ReconnectInterval} | RestProps], Acc) ->
-    trans_opts(RestProps, [{reconnect_interval, cuttlefish_duration:parse(b2l(ReconnectInterval))} | Acc]);
-trans_opts([{retry_interval, RetryInterval} | RestProps], Acc) ->
-    trans_opts(RestProps, [{retry_interval, cuttlefish_duration:parse(b2l(RetryInterval))} | Acc]);
-trans_opts([{ssl, SslFlag} | RestProps], Acc) ->
+    trans_opts(RestProps, [{queue, maps:from_list(NewQueueOpts)} | Acc], Name);
+trans_opts([{reconnect_interval, ReconnectInterval} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{reconnect_interval, cuttlefish_duration:parse(b2l(ReconnectInterval))} | Acc], Name);
+trans_opts([{retry_interval, RetryInterval} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{retry_interval, cuttlefish_duration:parse(b2l(RetryInterval))} | Acc], Name);
+trans_opts([{ssl, SslFlag} | RestProps], Acc, Name) ->
     trans_opts(RestProps, [{ssl,
                             case SslFlag of
                                 Bool when is_boolean(Bool) -> Bool;
                                 _Flag -> cuttlefish_flag:parse(b2a(SslFlag))
-                            end} | Acc]);
-trans_opts([{ssl_opt, SslOpt} | RestProps], Acc) ->
-    trans_opts(RestProps, [{ssl_opt, SslOpt} | Acc]);
-trans_opts([{start_type, StartType} | RestProps], Acc) ->
-    trans_opts(RestProps, [{start_type, b2a(StartType)} | Acc]);
-trans_opts([{subscriptions, Subscriptions} | RestProps], Acc) ->
+                            end} | Acc], Name);
+trans_opts([{ssl_opt, SslOpt} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{ssl_opt, SslOpt} | Acc], Name);
+trans_opts([{start_type, StartType} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [{start_type, b2a(StartType)} | Acc], Name);
+trans_opts([{subscriptions, Subscriptions} | RestProps], Acc, Name) ->
     NewSubscriptions = lists:map(fun(Subscription) ->
                                          Topic = proplists:get_value(<<"topic">>, Subscription),
                                          QoS = proplists:get_value(<<"qos">>, Subscription),
                                          {b2l(Topic), QoS}
                                  end,
                                  Subscriptions),
-    trans_opts(RestProps, [{subscriptions, NewSubscriptions} | Acc]);
-trans_opts([{id, _Id} | RestProps], Acc) ->
-    trans_opts(RestProps, Acc);
-trans_opts([{name, _Name} | RestProps], Acc) ->
-    trans_opts(RestProps, Acc);
-trans_opts([Prop | RestProps], Acc) ->
-    trans_opts(RestProps, [Prop | Acc]).
+    trans_opts(RestProps, [{subscriptions, NewSubscriptions} | Acc], Name);
+trans_opts([{id, _Id} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, Acc, Name);
+trans_opts([{name, _Name} | RestProps], Acc, Name) ->
+    trans_opts(RestProps, Acc, Name);
+trans_opts([Prop | RestProps], Acc, Name) ->
+    trans_opts(RestProps, [Prop | Acc], Name).
 
 maybe_b2a(Value) when is_binary(Value) ->
     b2a(Value);
