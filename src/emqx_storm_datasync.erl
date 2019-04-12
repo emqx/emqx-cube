@@ -67,9 +67,19 @@ mnesia(copy) ->
 list(_Bindings) ->
     all_bridges().
 
-update(BridgeSpec = #{id := Id}) ->
-    remove_bridge(Id),
-    create(BridgeSpec).
+update(BridgeSpec = #{id := Id, name := Name}) ->
+    ret(update_bridge(Id, Name, BridgeSpec)).
+
+-spec(update_bridge(list(), list(), list()) -> {ok, list()}).
+update_bridge(Id, Name, Options) ->
+    Bridge = #?TAB{id = Id, name = Name, options = Options},
+    mnesia:transaction(fun do_update_bridge/1, [Bridge]).
+
+do_update_bridge(Bridge = #?TAB{id = Id}) ->
+    case mnesia:read(?TAB, Id) of
+        [_|_] -> mnesia:write(Bridge);
+        [] -> mnesia:abort(noexisted)
+    end.
 
 lookup(#{id := Id}) ->
     {ok, case lookup_bridge(Id) of
@@ -87,14 +97,26 @@ delete(#{id := Id}) ->
     ret(remove_bridge(Id)).
 
 start(BridgeSpec) ->
-    start_bridge(BridgeSpec).
+    post_start_bridge(fun(_Id) -> ok end, BridgeSpec).
+
+post_start_bridge(PostAction, BridgeSpec = #{id := Id}) ->
+    case start_bridge(BridgeSpec) of
+        {ok, failed} ->
+            PostAction(Id),
+            ?LOG(error, "Start bridge: ~p failed", [Id]),
+            {ok, [{code, ?ERROR4},
+                  {data, <<"Start bridge failed">>}]};
+        RetValue ->
+            RetValue
+    end.
 
 create(BridgeSpec = #{id := Id, name := Name}) ->
     case add_bridge(Id, Name, BridgeSpec) of
         {atomic, ok} ->
-            start_bridge(BridgeSpec);
+            post_start_bridge(fun remove_bridge/1, BridgeSpec);
         {aborted, existed} ->
-            update(BridgeSpec);
+            update(BridgeSpec),
+            post_start_bridge(fun(_Id) -> ok end, BridgeSpec);
         {aborted, Error} ->
             {ok, [{code, ?ERROR4}, {data, Error}]}
     end.
@@ -162,16 +184,11 @@ start_bridge(#{ id := Id
                           connected -> [{code, ?SUCCESS},
                                         {data, <<"Bridge already started">>}];
                           _ ->
-                              remove_bridge(Id),
-                              ?LOG(error, "Start bridge: ~p failed", [Id]),
-                              [{code, ?ERROR4},
-                               {data, <<"Start bridge failed">>}]
+                              failed
+
                       catch
                           _Error:_Reason ->
-                              remove_bridge(Id),
-                              ?LOG(error, "Start bridge: ~p failed", [Id]),
-                              [{code, ?ERROR4},
-                               {data, <<"Start bridge failed">>}]
+                              failed
                       end
                   end,
     {ok, handle_lookup(Id, StartBridge)}.
