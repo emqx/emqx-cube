@@ -68,7 +68,7 @@ list(_Bindings) ->
     all_bridges().
 
 update(BridgeSpec = #{id := Id, name := Name}) ->
-    stop(BridgeSpec),
+    emqx_bridge_sup:drop_bridge(maybe_b2a(Id)),
     update_bridge(Id, Name, BridgeSpec),
     create(BridgeSpec).
 
