@@ -14,3 +14,4 @@ erlang.mk
 data/
 .erlang.mk/
 .DS_Store
+rebar.lock

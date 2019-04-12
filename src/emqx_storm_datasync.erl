@@ -68,14 +68,8 @@ list(_Bindings) ->
     all_bridges().
 
 update(BridgeSpec = #{id := Id}) ->
-    case emqx_bridge_sup:is_bridge_exist(maybe_b2a(Id)) of
-        true ->
-            remove_bridge(Id),
-            create(BridgeSpec);
-        false ->
-            remove_bridge(Id),
-            add(BridgeSpec)
-    end.
+    remove_bridge(Id),
+    create(BridgeSpec).
 
 lookup(#{id := Id}) ->
     {ok, case lookup_bridge(Id) of
