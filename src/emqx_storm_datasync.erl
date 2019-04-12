@@ -68,6 +68,7 @@ list(_Bindings) ->
     all_bridges().
 
 update(BridgeSpec = #{id := Id, name := Name}) ->
+    stop(BridgeSpec),
     update_bridge(Id, Name, BridgeSpec),
     create(BridgeSpec).
 
