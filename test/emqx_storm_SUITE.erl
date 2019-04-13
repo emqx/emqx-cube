@@ -125,10 +125,10 @@ test_datasync() ->
                 C, ?CONTROL, construct(datasync, <<"lookup">>,
                                        [{id, <<"bridge_id">>}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
-                C, ?CONTROL, construct(datasync, <<"update">>,
-                                       bridge_params(<<"bridge_name2">>)), 1),
-    ?assert(receive_response()),
+    %% {ok, _} = emqx_client:publish(
+    %%             C, ?CONTROL, construct(datasync, <<"update">>,
+    %%                                    bridge_params(<<"bridge_name2">>)), 1),
+    %% ?assert(receive_response()),
     {ok, _} = emqx_client:publish(
                 C, ?CONTROL, construct(datasync, <<"lookup">>,
                                        [{id, <<"bridge_id">>}]), 1),
@@ -144,10 +144,6 @@ test_datasync() ->
     {ok, _} = emqx_client:publish(
                 C, ?CONTROL, construct(datasync, <<"stop">>,
                                        [{id, <<"bridge_id">>}]), 1),
-    ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
-                C, ?CONTROL, construct(datasync, <<"create">>,
-                                       bridge_params(<<"bridge_name3">>)), 1),
     ?assert(receive_response()),
     {ok, _} = emqx_client:publish(
                 C, ?CONTROL, construct(datasync, <<"delete">>,
