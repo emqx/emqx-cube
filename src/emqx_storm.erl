@@ -81,7 +81,7 @@ init(Config = #{username := UserName}) ->
     process_flag(trap_exit, true),
     BinUserName = list_to_binary(UserName),
     {ok, connecting, Config#{client_id => BinUserName,
-                             keepalive => 600,
+                             keepalive => 60,
                              reconnect_delay_ms :=
                                  maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
                              control_topic => <<"storm/control/", BinUserName/binary>>,
