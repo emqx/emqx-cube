@@ -90,7 +90,7 @@ init(Config = #{username := UserName}) ->
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
-%% successfuly connected to remote node/cluster.
+%% successfully connected to remote node/cluster.
 connecting(enter, connected, #{reconnect_delay_ms := Timeout}) ->
     Action = {state_timeout, Timeout, reconnect},
     {keep_state_and_data, Action};

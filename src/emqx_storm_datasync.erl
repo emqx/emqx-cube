@@ -126,14 +126,22 @@ stop(#{id := Id}) ->
     stop_bridge(Id).
 
 status(_Bindings) ->
-    bridge_status().
+    bridges_status().
 
 -spec(all_bridges() -> list()).
 all_bridges() -> 
-    try ets:tab2list(?TAB) of
-        Bridges ->
+    case list_bridges() of
+        Bridges when is_list(Bridges) ->
             {ok, [{code, ?SUCCESS},
-                  {data, [Bridge ||{_TabName, _Id, _Name, Bridge} <- Bridges]}]}
+                  {data, [Bridge ||{_TabName, _Id, _Name, Bridge} <- Bridges]}]};
+        Result ->
+            Result
+    end.
+
+-spec(list_bridges() -> list()).
+list_bridges() ->
+    try ets:tab2list(?TAB) of
+        Bridges -> Bridges
     catch
         _Error:_Reason ->
             {ok, [{code, ?ERROR4}]}
@@ -183,9 +191,7 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
                                  {data, <<"Start bridge successfully">>}];
                           connected -> [{code, ?SUCCESS},
                                         {data, <<"Bridge already started">>}];
-                          _ ->
-                              failed
-
+                          _ -> failed
                       catch
                           _Error:_Reason ->
                               failed
@@ -193,22 +199,31 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
                   end,
     {ok, handle_lookup(Id, StartBridge)}.
     
--spec(bridge_status() -> list()).
-bridge_status() ->
-    BridgesStatus = [[{id, Id},
-                      {status, case Status of
-                                   standing_by -> disconnected;
-                                   Status0 -> Status0
-                               end}]
-                     || {Id, Status} <- emqx_bridge_sup:bridges()],
-    {ok, [{code, ?SUCCESS},
-          {data, BridgesStatus}]}.
+-spec(bridges_status() -> list()).
+bridges_status() ->
+    case list_bridges() of
+        Bridges when is_list(Bridges) ->
+            {ok, [{code, ?SUCCESS},
+                  {data, [get_bridge_status(Name)
+                          || {_TabName, _Id, Name, _Bridge} <- Bridges]}]};
+        Result -> Result
+    end.
+
+-spec(get_bridge_status(Name :: atom()) -> Status :: atom()).
+get_bridge_status(Name) ->
+    try emqx_bridge:status(Name) of
+        standing_by -> disconnected;
+        Status -> Status
+    catch
+        _Error:_Reason ->
+            disconnected
+    end.
 
 -spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
 stop_bridge(Id) ->
     DropBridge = fun(Name, _Options) ->
                      Name1 = maybe_b2a(Name),
-                     case emqx_bridge:ensure_stopped(Name1) of
+                     case emqx_bridge_sup:drop_bridge(Name1) of
                          ok ->
                              [{code, ?SUCCESS},
                               {data, <<"stop bridge successfully">>}];
