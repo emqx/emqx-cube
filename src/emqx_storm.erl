@@ -201,8 +201,7 @@ make_msg_handler(Config, Parent, Ref) ->
 handle_msg(Msg = #{topic     := ControlTopic,
                    payload   := Payload},
            Config = #{control_topic := ControlTopic,
-                      ack_topic  := RspTopic
-                     }) ->
+                      ack_topic  := RspTopic}) ->
     ?LOG(debug, "[EMQ X Storm] Handled message: ~p ~n, Config: ~p", [Msg, Config]),
     handle_payload(Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
@@ -232,16 +231,13 @@ subscribe_remote_topics(ClientPid, Subscriptions) ->
 send_response(Msg, Client) ->
     %% This function is evaluated by emqx_client itself.
     %% hence delegate to another temp process for the loopback gen_statem call.
-    _ = spawn_link(fun() ->
-                       case emqx_client:publish(Client, Msg) of
-                           {error, Reason} ->
-                               
-                               ?LOG(info, "Publish failed, Message: ~p"
-, [Msg]),
-                               exit({failed_to_publish_response, Reason});
-                           _Ok -> ok
-                       end
-                   end),
+    spawn(fun() ->
+              case emqx_client:publish(Client, Msg) of
+                  {error, Reason} ->
+                      ?LOG(info, "Publish failed, Message: ~p, Reason: ~p", [Msg, Reason]);
+                  _Ok -> ok
+              end
+          end),
     ok.
 
 send_response(Msg) ->

@@ -128,24 +128,16 @@ stop(#{id := Id}) ->
 status(_Bindings) ->
     bridges_status().
 
--spec(all_bridges() -> list()).
+-spec(all_bridges() -> {ok, list()}).
 all_bridges() -> 
-    case list_bridges() of
-        Bridges when is_list(Bridges) ->
-            {ok, [{code, ?SUCCESS},
-                  {data, [Bridge ||{_TabName, _Id, _Name, Bridge} <- Bridges]}]};
-        Result ->
-            Result
-    end.
+    Bridges = list_bridges(),
+    {ok, [{code, ?SUCCESS},
+          {data, [Bridge ||{_TabName, _Id, _Name, Bridge} <- Bridges]}]}.
+
 
 -spec(list_bridges() -> list()).
 list_bridges() ->
-    try ets:tab2list(?TAB) of
-        Bridges -> Bridges
-    catch
-        _Error:_Reason ->
-            {ok, [{code, ?ERROR4}]}
-    end.
+    ets:tab2list(?TAB).
 
 -spec(add_bridge(Id :: atom() | list(),
                  Name :: atom() | list(),
@@ -201,13 +193,10 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
     
 -spec(bridges_status() -> list()).
 bridges_status() ->
-    case list_bridges() of
-        Bridges when is_list(Bridges) ->
-            {ok, [{code, ?SUCCESS},
-                  {data, [get_bridge_status(Name)
-                          || {_TabName, _Id, Name, _Bridge} <- Bridges]}]};
-        Result -> Result
-    end.
+    Bridges = list_bridges(),
+    {ok, [{code, ?SUCCESS},
+          {data, [get_bridge_status(Name)
+                  || {_TabName, _Id, Name, _Bridge} <- Bridges]}]}.
 
 -spec(get_bridge_status(Name :: atom()) -> Status :: atom()).
 get_bridge_status(Name) ->
