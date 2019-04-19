@@ -41,7 +41,8 @@
 
 -export([ encode_result/2
         , make_rsp_msg/2
-        , send_response/1]).
+        , send_response/1
+        , send_response/2]).
 
 -import(proplists, [ get_value/3
                    , delete/2]).
@@ -80,15 +81,16 @@ init(Config = #{username := UserName}) ->
     process_flag(trap_exit, true),
     BinUserName = list_to_binary(UserName),
     {ok, connecting, Config#{client_id => BinUserName,
-                             keepalive => 600,
+                             keepalive => 60,
                              reconnect_delay_ms :=
                                  maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
                              control_topic => <<"storm/control/", BinUserName/binary>>,
-                             ack_topic => <<"storm/ack/", BinUserName/binary>>}}.
+                             ack_topic => <<"storm/ack/", BinUserName/binary>>
+                            }}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
-%% successfuly connected to remote node/cluster.
+%% successfully connected to remote node/cluster.
 connecting(enter, connected, #{reconnect_delay_ms := Timeout}) ->
     Action = {state_timeout, Timeout, reconnect},
     {keep_state_and_data, Action};
@@ -98,7 +100,8 @@ connecting(enter, _, #{reconnect_delay_ms := Timeout} = State) ->
         {ok, ConnRef, ConnPid} ->
             ?LOG(info, "[EMQ X Storm] Storm ~p connected", [name(storm)]),
             Action = {state_timeout, 0, connected},
-            {keep_state, State#{conn_ref => ConnRef, connection => ConnPid}, Action};
+            {keep_state, State#{ conn_ref => ConnRef
+                               , connection => ConnPid}, Action};
         Error ->
             ?LOG(error, "[EMQ X Storm] Storm ~p connected failed, Error: ~p ", [Error]),
             Action = {state_timeout, Timeout, reconnect},
@@ -120,7 +123,7 @@ connected(info, {disconnected, ConnRef, Reason},
             connection := ConnPid} = State) ->
     case ConnRefCurrent =:= ConnRef of
         true ->
-            ?LOG(info, "[EMQ X Storm] Storm ~p disconnected ~n reason=~p",
+            ?LOG(info, "[EMQ X Storm] Storm ~p disconnected ~p reason=~p",
                  [name(storm), ConnPid, Reason]),
             {next_state, connecting,
              State#{conn_ref := undefined, connection := undefined}};
@@ -225,19 +228,20 @@ subscribe_remote_topics(ClientPid, Subscriptions) ->
                       end
                   end, Subscriptions).
 
-send_response(Msg) ->
+send_response(Msg, Client) ->
     %% This function is evaluated by emqx_client itself.
     %% hence delegate to another temp process for the loopback gen_statem call.
-    Client = self(),
-    _ = spawn_link(fun() ->
-                       case emqx_client:publish(Client, Msg) of
-                           {error, Reason} ->
-                               ?LOG(info, "Publish failed, Message: ~p", [Msg]),
-                               exit({failed_to_publish_response, Reason});
-                           _Ok -> ok
-                       end
-                   end),
+    spawn(fun() ->
+              case emqx_client:publish(Client, Msg) of
+                  {error, Reason} ->
+                      ?LOG(info, "Publish failed, Message: ~p, Reason: ~p", [Msg, Reason]);
+                  _Ok -> ok
+              end
+          end),
     ok.
+
+send_response(Msg) ->
+    send_response(Msg, self()).
 
 handle_request(Req, RspTopic) ->
     Type = b2l(get_value(<<"type">>, Req, <<>>)),
@@ -245,15 +249,16 @@ handle_request(Req, RspTopic) ->
     RawArgs = get_value(<<"payload">>, Req, []),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
-    try Module:Fun(Args#{ rsp_topic => RspTopic }) of
+    try Module:Fun(Args#{ rsp_topic => RspTopic,
+                          storm_pid => self() }) of
         {ok, Result} ->
             encode_result(Result, Req)
     catch
         error:undef ->
-            ?LOG(error, "[EMQ X Storm] ~p is wrong type", [Fun]),
+            ?LOG(error, "[EMQ X Storm] ~p is wrong action.", [Fun]),
             encode_result([{code, ?ERROR2}], Req);
         error:function_clause ->
-            ?LOG(error, "[EMQ X Storm] ~p is wrong action", [Module]),
+            ?LOG(error, "[EMQ X Storm] ~p is wrong type.", [Module]),
             encode_result([{code, ?ERROR3}], Req);
         Error:Reason ->
             ?LOG(error, "[EMQ X Storm] Error: ~p, Reason: ~p, Args: ~p", [Error, Reason, Args]),

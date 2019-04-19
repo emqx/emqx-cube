@@ -42,12 +42,12 @@ metrics(_Bindings) ->
 connections(Bindings = #{'_page':= PageNum, '_limit' := Limit})->
     emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(PageNum, Limit));
 connections(Bindings) ->
-    emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(1, 20)).
+    emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(1, 5000)).
 
 sessions(Bindings = #{'_page' := PageNum, '_limit' := Limit}) ->
     emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(PageNum, Limit));
 sessions(Bindings) ->
-    emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(1, 20)).
+    emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(1, 5000)).
 
 
 topics(#{'_page' := PageNum, '_limit' := Limit}) ->

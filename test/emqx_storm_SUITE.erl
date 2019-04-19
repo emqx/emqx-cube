@@ -223,11 +223,12 @@ datasync_t(_Config) ->
     lists:foreach(fun({Id, Name, Options}) ->
                       emqx_storm_datasync:add_bridge(Id, Name, Options)
                   end, ?BRIDGES),
-    ct:log("All bridges: ~p", [ets:tab2list(bridges)]),
+
     ?assertEqual(3, length(Parse(emqx_storm_datasync:all_bridges()))),
     emqx_storm_datasync:delete(#{id => bridge3_id}),
     ?assertEqual(2, length(Parse(emqx_storm_datasync:list(#{})))),
     emqx_storm_datasync:add_bridge(test_id, test_name, bridge_params()),
+    ets:delete_all_objects(bridges),
     ?assertEqual([], Parse(emqx_storm_datasync:status(#{}))),
     ok.
 
