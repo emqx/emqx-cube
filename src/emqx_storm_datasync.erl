@@ -117,7 +117,8 @@ create(BridgeSpec = #{id := Id, name := Name}) ->
         {atomic, ok} ->
             post_start_bridge(fun remove_bridge/1, BridgeSpec);
         {aborted, existed} ->
-            update(BridgeSpec);
+            update(BridgeSpec),
+            post_start_bridge(fun(_Id) -> ok end, BridgeSpec);
         {aborted, Error} ->
             {ok, [{code, ?ERROR4}, {data, Error}]}
     end.
