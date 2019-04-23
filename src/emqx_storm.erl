@@ -65,13 +65,12 @@ callback_mode() -> [state_functions, state_enter].
 init(Config = #{username := UserName}) ->
     process_flag(trap_exit, true),
     BinUserName = list_to_binary(UserName),
-    {ok, connecting, Config#{ client_id => BinUserName
-                            , keepalive => 60
-                            , reconnect_delay_ms =>
-                                  maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS)
-                            , control_topic => <<"storm/control/", BinUserName/binary>>
-                            , ack_topic => <<"storm/ack/", BinUserName/binary>>
-                            }}.
+    {ok, connecting, Config#{client_id => BinUserName,
+                             keepalive => 60,
+                             reconnect_delay_ms =>
+                                  maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
+                             control_topic => <<"storm/control/", BinUserName/binary>>,
+                             ack_topic => <<"storm/ack/", BinUserName/binary>>}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -189,7 +188,7 @@ subscribe_remote_topics(ClientPid, Subscriptions) ->
                       end
                   end, Subscriptions).
 
-send_response(Msg, Client) ->
+send_response(Client, Msg) ->
     %% This function is evaluated by emqx_client itself.
     %% hence delegate to another temp process for the loopback gen_statem call.
     spawn(fun() ->
@@ -202,7 +201,7 @@ send_response(Msg, Client) ->
     ok.
 
 send_response(Msg) ->
-    send_response(Msg, self()).
+    send_response(self(), Msg).
 
 handle_request(Req, RspTopic) ->
     Type = b2l(get_value(<<"type">>, Req, <<>>)),

@@ -64,15 +64,66 @@ mnesia(boot) ->
 mnesia(copy) ->
     ok = ekka_mnesia:copy_table(?TAB).
 
+%%------------------------------------------------------------------------------
+%% API functions
+%%------------------------------------------------------------------------------
+
+-spec(list(Bindings :: map()) -> {ok, list()}).
 list(_Bindings) ->
     all_bridges().
 
+-spec(update(BridgeSpec :: map()) -> {ok, list()}).
 update(BridgeSpec = #{id := Id, name := Name}) ->
     emqx_bridge_sup:drop_bridge(maybe_b2a(Name)),
     update_bridge(Id, Name, BridgeSpec),
-    post_start_bridge(fun(_Id) -> ok end, BridgeSpec).
+    post_start_bridge(BridgeSpec).
 
--spec(update_bridge(list(), list(), list()) -> {ok, list()}).
+-spec(lookup(BridgeSpec :: map()) -> {ok, list()}).
+lookup(#{id := Id}) ->
+    {ok, case lookup_bridge(Id) of
+             ?NO_BRIDGE ->
+                 [{code, ?ERROR4}];
+             {_Id, _Name, Options} ->
+                 [{code, ?SUCCESS},
+                  {data, maps:without([rsp_topic, storm_pid], Options)}]
+         end}.
+
+-spec(add(BridgeSpec :: map()) -> {ok, list()}).
+add(BridgeSpec = #{id := Id, name := Name}) ->
+    ret(add_bridge(Id, Name, maps:remove(storm_pid, BridgeSpec))).
+
+-spec(delete(BridgeSpec :: map()) -> {ok, list()}).
+delete(#{id := Id}) ->
+    ret(remove_bridge(Id)).
+
+-spec(start(BridgeSpec :: map()) -> {ok, list()}).
+start(BridgeSpec) ->
+    post_start_bridge(BridgeSpec).
+
+-spec(create(BridgeSpec :: map()) -> {ok, list()}).
+create(BridgeSpec = #{id := Id, name := Name}) ->
+    case add_bridge(Id, Name, BridgeSpec) of
+        {atomic, ok} ->
+            post_start_bridge(fun remove_bridge/1, BridgeSpec);
+        {aborted, existed} ->
+            update(BridgeSpec),
+            post_start_bridge(BridgeSpec);
+        {aborted, Error} ->
+            {ok, [{code, ?ERROR4}, {data, Error}]}
+    end.
+
+-spec(stop(map()) -> {ok, list()}).
+stop(#{id := Id}) ->
+    {ok, stop_bridge(Id)}.
+
+-spec(status(map()) -> {ok, list()}).
+status(_Bindings) ->
+    bridges_status().
+
+%%------------------------------------------------------------------------------
+%% Internal functions
+%%------------------------------------------------------------------------------
+
 update_bridge(Id, Name, Options) ->
     Bridge = #?TAB{id = Id, name = Name, options = Options},
     mnesia:transaction(fun do_update_bridge/1, [Bridge]).
@@ -83,86 +134,44 @@ do_update_bridge(Bridge = #?TAB{id = Id}) ->
         [] -> mnesia:abort(noexisted)
     end.
 
-lookup(#{id := Id}) ->
-    {ok, case lookup_bridge(Id) of
-             ?NO_BRIDGE ->
-                 [{code, ?ERROR4}];
-             {_Id, _Name, Options} ->
-                 [{code, ?SUCCESS},
-                  {data, maps:without([rsp_topic, storm_pid], Options)}]
-         end}.
-
-add(BridgeSpec = #{id := Id, name := Name}) ->
-    ret(add_bridge(Id, Name, maps:remove(storm_pid, BridgeSpec))).
-
-delete(#{id := Id}) ->
-    ret(remove_bridge(Id)).
-
-start(BridgeSpec) ->
+post_start_bridge(BridgeSpec) ->
     post_start_bridge(fun(_Id) -> ok end, BridgeSpec).
 
 post_start_bridge(PostAction, BridgeSpec = #{id := Id}) ->
     case start_bridge(BridgeSpec) of
-        error ->
+        failed ->
             PostAction(Id),
-            ?LOG(error, "Bridge failed to start, Id : ~p", [Id]),
+            ?LOG(error, "[Storm] Bridge failed to start, Id : ~p", [Id]),
             {ok, [{code, ?ERROR4},
                   {data, <<"Start bridge failed">>}]};
         RetValue ->
             {ok, RetValue}
     end.
 
-create(BridgeSpec = #{id := Id, name := Name}) ->
-    case add_bridge(Id, Name, BridgeSpec) of
-        {atomic, ok} ->
-            post_start_bridge(fun remove_bridge/1, BridgeSpec);
-        {aborted, existed} ->
-            update(BridgeSpec),
-            post_start_bridge(fun(_Id) -> ok end, BridgeSpec);
-        {aborted, Error} ->
-            {ok, [{code, ?ERROR4}, {data, Error}]}
-    end.
-
-stop(#{id := Id}) ->
-    {ok, stop_bridge(Id)}.
-
-status(_Bindings) ->
-    bridges_status().
-
--spec(all_bridges() -> {ok, list()}).
 all_bridges() -> 
     Bridges = list_bridges(),
     {ok, [{code, ?SUCCESS},
           {data, [Bridge ||{_TabName, _Id, _Name, Bridge} <- Bridges]}]}.
 
-
--spec(list_bridges() -> list()).
 list_bridges() ->
     ets:tab2list(?TAB).
 
--spec(add_bridge(Id :: atom() | list(),
-                 Name :: atom() | list(),
-                 Options :: list()) 
-      -> {ok, list()}).
 add_bridge(Id, Name, Options) ->
     Config = #?TAB{id = Id, name = Name, options = Options},
     mnesia:transaction(fun insert_bridge/1, [Config]).
 
--spec insert_bridge(Bridge :: ?TAB()) ->  ok | no_return().
 insert_bridge(Bridge = #?TAB{id = Id}) ->
     case mnesia:read(?TAB, Id) of
         [] -> mnesia:write(Bridge);
         [_ | _] -> mnesia:abort(existed)
     end.
 
--spec(remove_bridge(Id :: atom()) -> ok | {error, any()}).
 remove_bridge(Id) ->
     handle_lookup(Id, fun(Name, _Options) ->
                           emqx_bridge_sup:drop_bridge(maybe_b2a(Name))
                       end),
     mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
--spec(start_bridge(map()) -> {ok, list()}).
 start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
     BridgeHandler = fun(Status) ->
                         {ok, RspPayload}
@@ -173,7 +182,7 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
                                                    , {type, <<"datasync">>}
                                                    , {action, <<"status">>}]),
                         RspMsg = make_rsp_msg(RspTopic, RspPayload),
-                        ok = send_response(RspMsg, StormPid)
+                        ok = send_response(StormPid, RspMsg)
                     end,
     StartBridge = fun(Name, Options) ->
                       Name1 = maybe_b2a(Name),
@@ -184,21 +193,19 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
                                  {data, <<"Start bridge successfully">>}];
                           connected -> [{code, ?SUCCESS},
                                         {data, <<"Bridge already started">>}];
-                          _ -> error
+                          _ -> failed
                       catch
-                          _Error:_Reason -> error
+                          _Error:_Reason -> failed
                       end
                   end,
     handle_lookup(Id, StartBridge).
     
--spec(bridges_status() -> list()).
 bridges_status() ->
     Bridges = list_bridges(),
     {ok, [{code, ?SUCCESS},
           {data, [get_bridge_status(Name)
                   || {_TabName, _Id, Name, _Bridge} <- Bridges]}]}.
 
--spec(get_bridge_status(Name :: atom()) -> Status :: atom()).
 get_bridge_status(Name) ->
     try emqx_bridge:status(Name) of
         standing_by -> disconnected;
@@ -207,7 +214,6 @@ get_bridge_status(Name) ->
         _Error:_Reason -> disconnected
     end.
 
--spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
 stop_bridge(Id) ->
     DropBridge = fun(Name, _Options) ->
                      Name1 = maybe_b2a(Name),
@@ -221,12 +227,11 @@ stop_bridge(Id) ->
 handle_lookup(Id, Handler) ->
     case lookup_bridge(Id) of
         {_Id, Name, Options} -> Handler(Name, Options);
-        _Error -> ?LOG(error, "Bridge[~p] not found", [Id]),
+        _Error -> ?LOG(error, "[Storm] Bridge[~p] not found", [Id]),
                   [{code, ?ERROR4}, {data, <<"bridge_not_found">>}]
     end.
 
 %% @doc Lookup bridge by id
--spec(lookup_bridge(atom()) -> tuple() | ?NO_BRIDGE).
 lookup_bridge(Id) ->
     case mnesia:dirty_read(?TAB, Id) of
         [{?TAB, Id, Name, Options}] ->
@@ -235,8 +240,6 @@ lookup_bridge(Id) ->
             ?NO_BRIDGE
     end.
 
--spec(ret(Args :: {atomic, ok} | {aborted, any()})
-      -> {ok, list()}).
 ret({atomic, ok})     -> {ok, [{code, ?SUCCESS}]};
 ret({aborted, Error}) -> {ok, [{code, ?ERROR4}, {data, Error}]}.
 
