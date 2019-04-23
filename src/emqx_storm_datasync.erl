@@ -54,13 +54,13 @@
 %%------------------------------------------------------------------------------
 
 mnesia(boot) ->
-    ok = ekka_mnesia:create_table(?TAB, [
-                {type, set},
-                {disc_copies, [node()]},
-                {record_name, ?TAB},
-                {attributes, record_info(fields, ?TAB)},
-                {storage_properties, [{ets, [{read_concurrency, true},
-                                             {write_concurrency, true}]}]}]);
+    ok = ekka_mnesia:create_table(?TAB, [{type, set},
+                                         {disc_copies, [node()]},
+                                         {record_name, ?TAB},
+                                         {attributes, record_info(fields, ?TAB)},
+                                         {storage_properties,
+                                          [{ets, [{read_concurrency, true},
+                                                  {write_concurrency, true}]}]}]);
 mnesia(copy) ->
     ok = ekka_mnesia:copy_table(?TAB).
 
@@ -103,13 +103,13 @@ start(BridgeSpec) ->
 
 post_start_bridge(PostAction, BridgeSpec = #{id := Id}) ->
     case start_bridge(BridgeSpec) of
-        {ok, failed} ->
+        error ->
             PostAction(Id),
             ?LOG(error, "Bridge failed to start, Id : ~p", [Id]),
             {ok, [{code, ?ERROR4},
                   {data, <<"Start bridge failed">>}]};
         RetValue ->
-            RetValue
+            {ok, RetValue}
     end.
 
 create(BridgeSpec = #{id := Id, name := Name}) ->
@@ -124,7 +124,7 @@ create(BridgeSpec = #{id := Id, name := Name}) ->
     end.
 
 stop(#{id := Id}) ->
-    stop_bridge(Id).
+    {ok, stop_bridge(Id)}.
 
 status(_Bindings) ->
     bridges_status().
@@ -158,7 +158,7 @@ insert_bridge(Bridge = #?TAB{id = Id}) ->
 -spec(remove_bridge(Id :: atom()) -> ok | {error, any()}).
 remove_bridge(Id) ->
     handle_lookup(Id, fun(Name, _Options) ->
-                              emqx_bridge_sup:drop_bridge(maybe_b2a(Name))
+                          emqx_bridge_sup:drop_bridge(maybe_b2a(Name))
                       end),
     mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
@@ -184,13 +184,12 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
                                  {data, <<"Start bridge successfully">>}];
                           connected -> [{code, ?SUCCESS},
                                         {data, <<"Bridge already started">>}];
-                          _ -> failed
+                          _ -> error
                       catch
-                          _Error:_Reason ->
-                              failed
+                          _Error:_Reason -> error
                       end
                   end,
-    {ok, handle_lookup(Id, StartBridge)}.
+    handle_lookup(Id, StartBridge).
     
 -spec(bridges_status() -> list()).
 bridges_status() ->
@@ -205,8 +204,7 @@ get_bridge_status(Name) ->
         standing_by -> disconnected;
         Status -> Status
     catch
-        _Error:_Reason ->
-            disconnected
+        _Error:_Reason -> disconnected
     end.
 
 -spec(stop_bridge(atom() | list() ) -> ok| {error, any()}).
@@ -214,24 +212,17 @@ stop_bridge(Id) ->
     DropBridge = fun(Name, _Options) ->
                      Name1 = maybe_b2a(Name),
                      case emqx_bridge_sup:drop_bridge(Name1) of
-                         ok ->
-                             [{code, ?SUCCESS},
-                              {data, <<"stop bridge successfully">>}];
-                         {error, _Error} ->
-                             [{code, ?ERROR4},
-                              {data, <<"stop bridge failed">>}]
+                         ok -> [{code, ?SUCCESS}, {data, <<"stop bridge successfully">>}];
+                         {error, _Error} -> [{code, ?ERROR4}, {data, <<"stop bridge failed">>}]
                      end
                  end,
-    {ok, handle_lookup(Id, DropBridge)}.
+    handle_lookup(Id, DropBridge).
 
 handle_lookup(Id, Handler) ->
     case lookup_bridge(Id) of
-        {_Id, Name, Options} ->
-            Handler(Name, Options);
-        _Error ->
-            ?LOG(error, "Bridge[~p] not found", [Id]),
-            [{code, ?ERROR4},
-             {data, <<"bridge_not_found">>}]
+        {_Id, Name, Options} -> Handler(Name, Options);
+        _Error -> ?LOG(error, "Bridge[~p] not found", [Id]),
+                  [{code, ?ERROR4}, {data, <<"bridge_not_found">>}]
     end.
 
 %% @doc Lookup bridge by id
