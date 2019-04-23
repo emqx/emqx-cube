@@ -83,11 +83,11 @@ connecting(enter, _, #{reconnect_delay_ms := Timeout} = State) ->
     ConnectConfig = maps:without([reconnect_delay_ms], State),
     case connect(ConnectConfig) of
         {ok, ConnRef, ConnPid} ->
-            ?LOG(info, "[EMQ X Storm] ~p connected", [name(storm)]),
+            ?LOG(info, "[Storm] ~p connected", [name(storm)]),
             Action = {state_timeout, 0, connected},
             {keep_state, State#{conn_ref => ConnRef, connection => ConnPid}, Action};
         Error ->
-            ?LOG(error, "[EMQ X Storm] connected failed, Error: ~p ", [Error]),
+            ?LOG(error, "[Storm] connected failed, Error: ~p ", [Error]),
             Action = {state_timeout, Timeout, reconnect},
             {keep_state_and_data, Action}
     end;
@@ -106,7 +106,7 @@ connected(info, {disconnected, ConnRef, Reason},
           #{conn_ref := ConnRefCurrent, connection := ConnPid} = State) ->
     case ConnRefCurrent =:= ConnRef of
         true ->
-            ?LOG(info, "[EMQ X Storm] ~p disconnected ~p reason=~p", [name(storm), ConnPid, Reason]),
+            ?LOG(info, "[Storm] ~p disconnected ~p reason=~p", [name(storm), ConnPid, Reason]),
             {next_state, connecting,
              State#{conn_ref := undefined, connection := undefined}};
         false ->
@@ -116,7 +116,7 @@ connected(Type, Content, State) ->
     common(connected, Type, Content, State).
 
 common(StateName, Type, Content, State) ->
-    ?LOG(info, "[EMQ X Storm] ~p discarded ~p type event at state ~p:\n~p", [name(storm), Type, StateName, Content]),
+    ?LOG(info, "[Storm] ~p discarded ~p type event at state ~p:\n~p", [name(storm), Type, StateName, Content]),
     {keep_state, State}.
 
 terminate(_Reason, _State, _Data) ->
@@ -141,15 +141,15 @@ connect(Config = #{control_topic := ControlTopic}) ->
                         {ok, Ref, Pid}
                     catch
                         throw:Reason ->
-                            ?LOG(error, "[EMQ X Storm] Subscribing remote topics failed, Reason : ~p", [Reason]),
+                            ?LOG(error, "[Storm] Subscribing remote topics failed, Reason : ~p", [Reason]),
                             {error, Reason}
                     end;
                 {error, Reason} ->
-                    ?LOG(error, "[EMQ X Storm] Connecting remote storm server failed, Reason : ~p", [Reason]),
+                    ?LOG(error, "[Storm] Connecting remote storm server failed, Reason : ~p", [Reason]),
                     {error, Reason}
             end;
         {error, _} = Error ->
-            ?LOG(error, "[EMQ X Storm] Starting Client failed, Error: ~p", [Error]),
+            ?LOG(error, "[Storm] Starting Client failed, Error: ~p", [Error]),
             Error
     end.
 
@@ -164,7 +164,7 @@ handle_msg(Msg = #{topic     := ControlTopic,
                    payload   := Payload},
            Config = #{control_topic := ControlTopic,
                       ack_topic  := RspTopic}) ->
-    ?LOG(debug, "[EMQ X Storm] Handled message: ~p ~n, Config: ~p", [Msg, Config]),
+    ?LOG(debug, "[Storm] Handled message: ~p ~n, Config: ~p", [Msg, Config]),
     handle_payload(Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.
@@ -178,7 +178,7 @@ handle_payload(Payload, RspTopic) ->
                      {ok, RspPayload} = encode_result([{code, ?ERROR1}], []),
                      make_rsp_msg(RspTopic, RspPayload)
              end,
-    ?LOG(debug, "[EMQ X Storm] Response message: ~p", [RspMsg]),
+    ?LOG(debug, "[Storm] Response message: ~p", [RspMsg]),
     ok = send_response(RspMsg).
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
@@ -215,13 +215,13 @@ handle_request(Req, RspTopic) ->
             encode_result(Result, Req)
     catch
         error:undef ->
-            ?LOG(error, "[EMQ X Storm] ~p is wrong action.", [Fun]),
+            ?LOG(error, "[Storm] ~p is wrong action.", [Fun]),
             encode_result([{code, ?ERROR2}], Req);
         error:function_clause ->
-            ?LOG(error, "[EMQ X Storm] ~p is wrong type.", [Module]),
+            ?LOG(error, "[Storm] ~p is wrong type.", [Module]),
             encode_result([{code, ?ERROR3}], Req);
         Error:Reason ->
-            ?LOG(error, "[EMQ X Storm] Error: ~p, Reason: ~p, Args: ~p", [Error, Reason, Args]),
+            ?LOG(error, "[Storm] Error: ~p, Reason: ~p, Args: ~p", [Error, Reason, Args]),
             encode_result([{code, ?ERROR5}], Req)
     end.
 
