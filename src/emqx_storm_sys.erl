@@ -21,7 +21,8 @@
         , connections/1
         , sessions/1
         , topics/1
-        , subscriptions/1]).
+        , subscriptions/1
+        ]).
 
 nodes(Bindings = #{node := _Node}) ->
     emqx_mgmt_api_nodes:get(Bindings, params);

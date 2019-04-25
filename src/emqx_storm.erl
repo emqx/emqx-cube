@@ -29,10 +29,12 @@
 -export([ callback_mode/0
         , init/1
         , terminate/3
-        , code_change/4]).
+        , code_change/4
+        ]).
 
 -export([ connecting/3
-        , connected/3]).
+        , connected/3
+        ]).
 
 -export([ l2a/1
         , b2a/1
@@ -42,51 +44,33 @@
 -export([ encode_result/2
         , make_rsp_msg/2
         , send_response/1
-        , send_response/2]).
+        , send_response/2
+        ]).
 
 -import(proplists, [ get_value/3
-                   , delete/2]).
+                   , delete/2
+                   ]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Creates a gen_statem process which calls Module:init/1 to
-%% initialize. To ensure a synchronized start-up procedure, this
-%% function does not return until Module:init/1 has returned.
-%% @end
-%%--------------------------------------------------------------------
 start_link(Config) when is_list(Config) ->
     start_link(maps:from_list(Config));
 start_link(Config) ->
     gen_statem:start_link({local, name(storm)}, ?MODULE, Config, []).
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Define the callback_mode() for emqx_storm
-%% @end
-%%--------------------------------------------------------------------
 callback_mode() -> [state_functions, state_enter].
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Start storm function
-%% @end
-%%--------------------------------------------------------------------
 init(Config = #{username := UserName}) ->
     process_flag(trap_exit, true),
     BinUserName = list_to_binary(UserName),
     {ok, connecting, Config#{client_id => BinUserName,
                              keepalive => 60,
-                             reconnect_delay_ms :=
-                                 maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
+                             reconnect_delay_ms =>
+                                  maps:get(reconnect_delay_ms, Config, ?DEFAULT_RECONNECT_DELAY_MS),
                              control_topic => <<"storm/control/", BinUserName/binary>>,
-                             ack_topic => <<"storm/ack/", BinUserName/binary>>
-                            }}.
+                             ack_topic => <<"storm/ack/", BinUserName/binary>>}}.
 
 %% @doc Connecting state is a state with timeout.
 %% After each timeout, it re-enters this state and start a retry until
@@ -98,12 +82,11 @@ connecting(enter, _, #{reconnect_delay_ms := Timeout} = State) ->
     ConnectConfig = maps:without([reconnect_delay_ms], State),
     case connect(ConnectConfig) of
         {ok, ConnRef, ConnPid} ->
-            ?LOG(info, "[EMQ X Storm] Storm ~p connected", [name(storm)]),
+            ?LOG(info, "[Storm] ~p connected", [name(storm)]),
             Action = {state_timeout, 0, connected},
-            {keep_state, State#{ conn_ref => ConnRef
-                               , connection => ConnPid}, Action};
+            {keep_state, State#{conn_ref => ConnRef, connection => ConnPid}, Action};
         Error ->
-            ?LOG(error, "[EMQ X Storm] Storm ~p connected failed, Error: ~p ", [Error]),
+            ?LOG(error, "[Storm] connected failed, Error: ~p ", [Error]),
             Action = {state_timeout, Timeout, reconnect},
             {keep_state_and_data, Action}
     end;
@@ -119,12 +102,10 @@ connecting(Type, Content, State) ->
 connected(enter, _OldState, _State) ->
     keep_state_and_data;
 connected(info, {disconnected, ConnRef, Reason},
-          #{conn_ref := ConnRefCurrent,
-            connection := ConnPid} = State) ->
+          #{conn_ref := ConnRefCurrent, connection := ConnPid} = State) ->
     case ConnRefCurrent =:= ConnRef of
         true ->
-            ?LOG(info, "[EMQ X Storm] Storm ~p disconnected ~p reason=~p",
-                 [name(storm), ConnPid, Reason]),
+            ?LOG(info, "[Storm] ~p disconnected ~p reason=~p", [name(storm), ConnPid, Reason]),
             {next_state, connecting,
              State#{conn_ref := undefined, connection := undefined}};
         false ->
@@ -134,34 +115,14 @@ connected(Type, Content, State) ->
     common(connected, Type, Content, State).
 
 common(StateName, Type, Content, State) ->
-    ?LOG(info, "[EMQ X Storm] Storm ~p discarded ~p type event at state ~p:\n~p",
-         [name(storm), Type, StateName, Content]),
+    ?LOG(info, "[Storm] ~p discarded ~p type event at state ~p:\n~p", [name(storm), Type, StateName, Content]),
     {keep_state, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_statem when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_statem terminates with
-%% Reason. The return value is ignored.
-%% @end
-%%--------------------------------------------------------------------
 terminate(_Reason, _State, _Data) ->
     void.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%% @end
-%%--------------------------------------------------------------------
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
-
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
 
 connect(Config = #{control_topic := ControlTopic}) ->
     Ref = make_ref(),
@@ -178,16 +139,16 @@ connect(Config = #{control_topic := ControlTopic}) ->
                         subscribe_remote_topics(Pid, Subs),
                         {ok, Ref, Pid}
                     catch
-                        throw : Reason ->
-                            ?LOG(error, "[EMQ X Storm] Subscribing remote topics failed, Reason : ~p", [Reason]),
+                        throw:Reason ->
+                            ?LOG(error, "[Storm] Subscribing remote topics failed, Reason : ~p", [Reason]),
                             {error, Reason}
                     end;
                 {error, Reason} ->
-                    ?LOG(error, "[EMQ X Storm] Connecting remote storm server failed, Reason : ~p", [Reason]),
+                    ?LOG(error, "[Storm] Connecting remote storm server failed, Reason : ~p", [Reason]),
                     {error, Reason}
             end;
         {error, _} = Error ->
-            ?LOG(error, "[EMQ X Storm] Starting Client failed, Error: ~p", [Error]),
+            ?LOG(error, "[Storm] Starting Client failed, Error: ~p", [Error]),
             Error
     end.
 
@@ -202,7 +163,7 @@ handle_msg(Msg = #{topic     := ControlTopic,
                    payload   := Payload},
            Config = #{control_topic := ControlTopic,
                       ack_topic  := RspTopic}) ->
-    ?LOG(debug, "[EMQ X Storm] Handled message: ~p ~n, Config: ~p", [Msg, Config]),
+    ?LOG(debug, "[Storm] Handled message: ~p ~n, Config: ~p", [Msg, Config]),
     handle_payload(Payload, RspTopic);
 handle_msg(_Msg, _Interaction) ->
     ok.
@@ -216,19 +177,18 @@ handle_payload(Payload, RspTopic) ->
                      {ok, RspPayload} = encode_result([{code, ?ERROR1}], []),
                      make_rsp_msg(RspTopic, RspPayload)
              end,
-    ?LOG(debug, "[EMQ X Storm] Response message: ~p", [RspMsg]),
+    ?LOG(debug, "[Storm] Response message: ~p", [RspMsg]),
     ok = send_response(RspMsg).
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
     lists:foreach(fun({Topic, QoS}) ->
                       case emqx_client:subscribe(ClientPid, Topic, QoS) of
                           {ok, _, _} -> ok;
-                          Error ->
-                              throw(Error)
+                          Error -> throw(Error)
                       end
                   end, Subscriptions).
 
-send_response(Msg, Client) ->
+send_response(Client, Msg) ->
     %% This function is evaluated by emqx_client itself.
     %% hence delegate to another temp process for the loopback gen_statem call.
     spawn(fun() ->
@@ -241,7 +201,7 @@ send_response(Msg, Client) ->
     ok.
 
 send_response(Msg) ->
-    send_response(Msg, self()).
+    send_response(self(), Msg).
 
 handle_request(Req, RspTopic) ->
     Type = b2l(get_value(<<"type">>, Req, <<>>)),
@@ -249,19 +209,18 @@ handle_request(Req, RspTopic) ->
     RawArgs = get_value(<<"payload">>, Req, []),
     Args = convert(RawArgs),
     Module = list_to_atom("emqx_storm_" ++ Type),
-    try Module:Fun(Args#{ rsp_topic => RspTopic,
-                          storm_pid => self() }) of
+    try Module:Fun(Args#{rsp_topic => RspTopic, storm_pid => self()}) of
         {ok, Result} ->
             encode_result(Result, Req)
     catch
         error:undef ->
-            ?LOG(error, "[EMQ X Storm] ~p is wrong action.", [Fun]),
+            ?LOG(error, "[Storm] ~p is wrong action.", [Fun]),
             encode_result([{code, ?ERROR2}], Req);
         error:function_clause ->
-            ?LOG(error, "[EMQ X Storm] ~p is wrong type.", [Module]),
+            ?LOG(error, "[Storm] ~p is wrong type.", [Module]),
             encode_result([{code, ?ERROR3}], Req);
         Error:Reason ->
-            ?LOG(error, "[EMQ X Storm] Error: ~p, Reason: ~p, Args: ~p", [Error, Reason, Args]),
+            ?LOG(error, "[Storm] Error: ~p, Reason: ~p, Args: ~p", [Error, Reason, Args]),
             encode_result([{code, ?ERROR5}], Req)
     end.
 
