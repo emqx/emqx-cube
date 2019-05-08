@@ -11,9 +11,9 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
--module(emqx_storm_app).
+-module(emqx_cube_app).
 
--include("emqx_storm.hrl").
+-include("emqx_cube.hrl").
 
 -behaviour(application).
 
@@ -31,7 +31,7 @@
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%%     start the storm client app
+%%     start the cube client app
 %% @end
 %%--------------------------------------------------------------------
 -spec start(StartType :: normal |
@@ -42,7 +42,7 @@
                    {ok, Pid :: pid(), State :: map()} |
                    {error, Reason :: term()}.
 start(_StartType, _StartArgs) ->
-    emqx_storm_sup:start_link().
+    emqx_cube_sup:start_link().
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
