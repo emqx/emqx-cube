@@ -1,25 +1,14 @@
-## shallow clone for speed
+language: erlang
 
-REBAR_GIT_CLONE_OPTIONS += --depth 1
-export REBAR_GIT_CLONE_OPTIONS
+otp_release:
+   - 21.2
 
-REBAR = rebar3
-all: compile
+before_install:
+    - git clone https://github.com/erlang/rebar3.git; cd rebar3; ./bootstrap; sudo mv rebar3 /usr/local/bin/; cd ..
 
-compile:
-	$(REBAR) compile
+script:
+  - make xref
+  - make eunit
+  - make ct
 
-clean: distclean
-
-ct: compile
-	$(REBAR) as test ct
-
-eunit: compile
-	$(REBAR) as test eunit
-
-xref:
-	$(REBAR) xref
-
-distclean:
-	@rm -rf _build
-	@rm -f data/app.*.config data/vm.*.args rebar.lock
+sudo: false
