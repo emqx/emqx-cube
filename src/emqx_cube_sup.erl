@@ -12,9 +12,9 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(emqx_storm_sup).
+-module(emqx_cube_sup).
 
--include("emqx_storm.hrl").
+-include("emqx_cube.hrl").
 -include_lib("stdlib/include/qlc.hrl").
 
 -behaviour(supervisor).
@@ -33,7 +33,7 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Starts storm supervisor
+%% Starts cube supervisor
 %% @end
 %%--------------------------------------------------------------------
 -spec start_link() -> {ok, Pid :: pid()} |
@@ -51,7 +51,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% init storm supervisor
+%% init cube supervisor
 %% @end
 %%--------------------------------------------------------------------
 -spec init(Args :: term()) ->
@@ -63,18 +63,18 @@ init(?SUP) ->
                  intensity => 100,
                  period => 10},
     Options = application:get_all_env(?APP),
-    {ok, {SupFlags, [storm_spec(Options)]}}.
+    {ok, {SupFlags, [cube_spec(Options)]}}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
--spec storm_spec(Args :: tuple()) ->
+-spec cube_spec(Args :: tuple()) ->
                         ChildSpec :: supervisor:child_spec().
-storm_spec(Options) ->
-    #{id       => storm,
-      start    => {emqx_storm, start_link, [Options]},
+cube_spec(Options) ->
+    #{id       => cube,
+      start    => {emqx_cube, start_link, [Options]},
       restart  => permanent,
       shutdown => 5000,
       type     => worker,
-      modules  => [emqx_storm]}.
+      modules  => [emqx_cube]}.

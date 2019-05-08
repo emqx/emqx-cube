@@ -1,50 +1,50 @@
 %%-*- mode: erlang -*-
-%% emqx_storm config mapping
+%% emqx_cube config mapping
 
-{mapping, "storm.address", "emqx_storm", [
+{mapping, "cube.address", "emqx_cube", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.ssl", "emqx_storm", [
+{mapping, "cube.ssl", "emqx_cube", [
   {datatype, flag},
   {default, off}
 ]}.
 
-{mapping, "storm.cacertfile", "emqx_storm", [
+{mapping, "cube.cacertfile", "emqx_cube", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.certfile", "emqx_storm", [
+{mapping, "cube.certfile", "emqx_cube", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.keyfile", "emqx_storm", [
+{mapping, "cube.keyfile", "emqx_cube", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.ciphers", "emqx_storm", [
+{mapping, "cube.ciphers", "emqx_cube", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.username", "emqx_storm", [
+{mapping, "cube.username", "emqx_cube", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.password", "emqx_storm", [
+{mapping, "cube.password", "emqx_cube", [
   {datatype, string}
 ]}.
 
-{mapping, "storm.reconnect_interval", "emqx_storm", [
+{mapping, "cube.reconnect_interval", "emqx_cube", [
   {default, "30s"},
   {datatype, {duration, ms}}
 ]}.
 
-{mapping, "storm.tls_versions", "emqx_storm", [
+{mapping, "cube.tls_versions", "emqx_cube", [
   {datatype, string},
   {default, "tlsv1,tlsv1.1,tlsv1.2"}
 ]}.
 
-{translation, "emqx_storm", fun(Conf) ->
+{translation, "emqx_cube", fun(Conf) ->
   Split = fun(undefined) -> undefined; (S) -> string:tokens(S, ",") end,
   IsSsl = fun(cacertfile)   -> true;
              (certfile)     -> true;
@@ -81,11 +81,11 @@
                       Cfg#{Key => Value}
               end,
   C = lists:foldl(
-        fun({["storm", Opt], Val}, Acc) ->
+        fun({["cube", Opt], Val}, Acc) ->
                 Merge(list_to_atom(Opt), Val, Acc);
            (_, Acc) -> Acc
         end
-       , [], lists:usort(cuttlefish_variable:filter_by_prefix("storm.", Conf))),
+       , [], lists:usort(cuttlefish_variable:filter_by_prefix("cube.", Conf))),
 
   C1 = maps:fold(Translate, #{}, maps:from_list(C)),
   maps:to_list(C1)                                    

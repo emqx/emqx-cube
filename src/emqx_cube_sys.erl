@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(emqx_storm_sys).
+-module(emqx_cube_sys).
 
 -export([ nodes/1
         , stats/1
