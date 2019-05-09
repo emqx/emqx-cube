@@ -1,11 +1,11 @@
-{application,emqx_storm,
-             [{description,"EMQ X Edge Storm plugin"},
+{application,emqx_cube,
+             [{description,"EMQ X Edge Cube plugin"},
               {vsn, git},
               {modules,[]},
               {registered,[]},
               {applications, [kernel, stdlib]},
-              {mod,{emqx_storm_app, []}},
+              {mod,{emqx_cube_app, []}},
               {env,[]},
               {licenses, ["Apache-2.0"]},
-              {links, ["Github", "https://github.com/emqx/emqx-storm"]}
+              {links, ["Github", "https://github.com/emqx/emqx-cube"]}
              ]}.

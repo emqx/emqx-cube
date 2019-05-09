@@ -18,7 +18,7 @@
 
 -type bridges() :: #bridges{}.
 
--define(APP, emqx_storm).
+-define(APP, emqx_cube).
 
 -define(TAB, bridges).
 

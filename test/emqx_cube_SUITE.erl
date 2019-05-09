@@ -12,7 +12,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(emqx_storm_SUITE).
+-module(emqx_cube_SUITE).
 
 -compile(export_all).
 -compile(nowarn_export_all).
@@ -26,38 +26,30 @@
 -define(BRIDGE2, {bridge2_id, bridge2_name, [{address, "127.0.0.2"}]}).
 -define(BRIDGE3, {bridge3_id, bridge3_name, [{address, "127.0.0.3"}]}).
 
--define(CONTROL, <<"storm/control/qg3rgewt135">>).
--define(ACK, <<"storm/ack/qg3rgewt135">>).
+-define(CONTROL, <<"cube/control/qg3rgewt135">>).
+-define(ACK, <<"cube/ack/qg3rgewt135">>).
 
 -define(BRIDGES, [?BRIDGE1, ?BRIDGE2, ?BRIDGE3]).
 
 all() ->
-    [{group, emqx_storm}].
+    [{group, emqx_cube}].
 
 groups() ->
-    [{emqx_storm, [sequence],
+    [{emqx_cube, [sequence],
       [ datasync_t
-      , storm_t
+      , cube_t
       , sys_t
       ]}].
 
 init_per_suite(Config) ->
-    application:load(emqx_storm),
-    [start_apps(App, SchemaFile, ConfigFile) ||
-        {App, SchemaFile, ConfigFile}
-            <- [{emqx, deps_path(emqx, "priv/emqx.schema"),
-                       deps_path(emqx, "etc/emqx.conf")},
-                {emqx_management, deps_path(emqx_management, "priv/emqx_management.schema"),
-                                  deps_path(emqx_management, "etc/emqx_management.conf")},
-                {emqx_storm, local_path("priv/emqx_storm.schema"),
-                             local_path("etc/emqx_storm.conf")}]],
+    emqx_ct_helpers:start_apps([emqx, emqx_management, emqx_cube], fun set_special_configs/1),
     Config.
 
 end_per_suite(_Config) ->
     mnesia:delete_table(bridges),
-    [application:stop(App) || App <- [emqx_storm, emqx_management, emqx]].
+    emqx_ct_helpers:stop_apps([emqx_cube, emqx_management, emqx]).
 
-storm_t(_Config) ->
+cube_t(_Config) ->
     test_sys(),
     test_datasync(),
     ok.
@@ -201,13 +193,13 @@ sys_t(_Config) ->
     lists:foreach(fun(Value) ->
                       assertmatch_sys_t(Value)
                   end,
-                  [emqx_storm_sys:nodes(Param),
-                   emqx_storm_sys:stats(Param),
-                   emqx_storm_sys:metrics(Param),
-                   {meta, emqx_storm_sys:connections(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
-                   {meta, emqx_storm_sys:sessions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
-                   {meta, emqx_storm_sys:topics(Param#{'_page' => <<"1">>, '_limit' => <<"20">>})},
-                   {meta, emqx_storm_sys:subscriptions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})}]),
+                  [emqx_cube_sys:nodes(Param),
+                   emqx_cube_sys:stats(Param),
+                   emqx_cube_sys:metrics(Param),
+                   {meta, emqx_cube_sys:connections(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
+                   {meta, emqx_cube_sys:sessions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
+                   {meta, emqx_cube_sys:topics(Param#{'_page' => <<"1">>, '_limit' => <<"20">>})},
+                   {meta, emqx_cube_sys:subscriptions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})}]),
     ok.
 
 assertmatch_sys_t({meta, Value}) ->
@@ -219,17 +211,17 @@ datasync_t(_Config) ->
     Parse= fun({ok, ValueList}) ->
                proplists:get_value(data, ValueList)
            end,
-    ?assertEqual([], Parse(emqx_storm_datasync:list(#{}))),
+    ?assertEqual([], Parse(emqx_cube_datasync:list(#{}))),
     lists:foreach(fun({Id, Name, Options}) ->
-                      emqx_storm_datasync:add_bridge(Id, Name, Options)
+                      emqx_cube_datasync:add_bridge(Id, Name, Options)
                   end, ?BRIDGES),
 
-    ?assertEqual(3, length(Parse(emqx_storm_datasync:all_bridges()))),
-    emqx_storm_datasync:delete(#{id => bridge3_id}),
-    ?assertEqual(2, length(Parse(emqx_storm_datasync:list(#{})))),
-    emqx_storm_datasync:add_bridge(test_id, test_name, bridge_params()),
+    ?assertEqual(3, length(Parse(emqx_cube_datasync:all_bridges()))),
+    emqx_cube_datasync:delete(#{id => bridge3_id}),
+    ?assertEqual(2, length(Parse(emqx_cube_datasync:list(#{})))),
+    emqx_cube_datasync:add_bridge(test_id, test_name, bridge_params()),
     ets:delete_all_objects(bridges),
-    ?assertEqual([], Parse(emqx_storm_datasync:status(#{}))),
+    ?assertEqual([], Parse(emqx_cube_datasync:status(#{}))),
     ok.
 
 start_apps(App, SchemaFile, ConfigFile) ->
@@ -248,7 +240,7 @@ deps_path(App, RelativePath) ->
     filename:join([Path, "..", RelativePath]).
 
 local_path(RelativePath) ->
-    deps_path(emqx_storm, RelativePath).
+    deps_path(emqx_cube, RelativePath).
 
 read_schema_configs(App, SchemaFile, ConfigFile) ->
     ct:pal("Read configs - SchemaFile: ~p, ConfigFile: ~p", [SchemaFile, ConfigFile]),
@@ -258,7 +250,7 @@ read_schema_configs(App, SchemaFile, ConfigFile) ->
     Vals = proplists:get_value(App, NewConfig, []),
     [application:set_env(App, Par, Value) || {Par, Value} <- Vals].
 
-set_special_configs(emqx_storm) ->
-    application:set_env(emqx_storm, host, "127.0.0.1");
+set_special_configs(emqx_cube) ->
+    application:set_env(emqx_cube, host, "127.0.0.1");
 set_special_configs(_App) ->
     ok.

@@ -12,16 +12,16 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
--module(emqx_storm_datasync).
+-module(emqx_cube_datasync).
 
 -define(NO_BRIDGE, undefined).
 
--include("emqx_storm.hrl").
+-include("emqx_cube.hrl").
 -include_lib("emqx/include/emqx_mqtt.hrl").
 -include_lib("emqx/include/logger.hrl").
 -include_lib("stdlib/include/qlc.hrl").
 
--import(emqx_storm, [ b2a/1
+-import(emqx_cube, [ b2a/1
                     , b2l/1
                     , encode_result/2
                     , make_rsp_msg/2
@@ -85,12 +85,12 @@ lookup(#{id := Id}) ->
                  [{code, ?ERROR4}];
              {_Id, _Name, Options} ->
                  [{code, ?SUCCESS},
-                  {data, maps:without([rsp_topic, storm_pid], Options)}]
+                  {data, maps:without([rsp_topic, cube_pid], Options)}]
          end}.
 
 -spec(add(BridgeSpec :: map()) -> {ok, list()}).
 add(BridgeSpec = #{id := Id, name := Name}) ->
-    ret(add_bridge(Id, Name, maps:remove(storm_pid, BridgeSpec))).
+    ret(add_bridge(Id, Name, maps:remove(cube_pid, BridgeSpec))).
 
 -spec(delete(BridgeSpec :: map()) -> {ok, list()}).
 delete(#{id := Id}) ->
@@ -141,7 +141,7 @@ post_start_bridge(PostAction, BridgeSpec = #{id := Id}) ->
     case start_bridge(BridgeSpec) of
         failed ->
             PostAction(Id),
-            ?LOG(error, "[Storm] Bridge failed to start, Id : ~p", [Id]),
+            ?LOG(error, "[Cube] Bridge failed to start, Id : ~p", [Id]),
             {ok, [{code, ?ERROR4},
                   {data, <<"Start bridge failed">>}]};
         RetValue ->
@@ -172,7 +172,7 @@ remove_bridge(Id) ->
                       end),
     mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
-start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
+start_bridge(#{ id := Id, rsp_topic := RspTopic, cube_pid := CubePid}) ->
     BridgeHandler = fun(Status) ->
                         {ok, RspPayload}
                                 = encode_result([ {code, 200}
@@ -182,7 +182,7 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, storm_pid := StormPid}) ->
                                                    , {type, <<"datasync">>}
                                                    , {action, <<"status">>}]),
                         RspMsg = make_rsp_msg(RspTopic, RspPayload),
-                        ok = send_response(StormPid, RspMsg)
+                        ok = send_response(CubePid, RspMsg)
                     end,
     StartBridge = fun(Name, Options) ->
                       Name1 = maybe_b2a(Name),
@@ -227,7 +227,7 @@ stop_bridge(Id) ->
 handle_lookup(Id, Handler) ->
     case lookup_bridge(Id) of
         {_Id, Name, Options} -> Handler(Name, Options);
-        _Error -> ?LOG(error, "[Storm] Bridge[~p] not found", [Id]),
+        _Error -> ?LOG(error, "[Cube] Bridge[~p] not found", [Id]),
                   [{code, ?ERROR4}, {data, <<"bridge_not_found">>}]
     end.
 
