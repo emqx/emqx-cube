@@ -15,3 +15,4 @@ data/
 .erlang.mk/
 .DS_Store
 rebar.lock
+etc/emqx_cube.conf.rendered
