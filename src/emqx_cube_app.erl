@@ -25,7 +25,7 @@
         ]).
 
 start(_StartType, _StartArgs) ->
-    ok = application:ensure_started(emqx_bridge),
+    ok = application:ensure_started(emqx_bridge_mqtt),
     emqx_cube_sup:start_link().
 
 
