@@ -31,12 +31,14 @@ UrlPrefix = "https://github.com/emqx/",
 
 EMQX_DEP = {emqx, {git, UrlPrefix ++ "emqx", {branch, BRANCH}}},
 
-EMQX_BRIDGE_DEP = {emqx_bridge, {git, UrlPrefix ++ "emqx-bridge", {branch, BRANCH}}},
+EMQX_BRIDGE_MQTT_DEP = {emqx_bridge_mqtt, {git, UrlPrefix ++ "emqx-bridge-mqtt", {branch, "move-bridge-functions-from-emqx-here"}}},
 
 EMQX_MGMT_DEP = {emqx_management, {git, UrlPrefix ++ "emqx-management", {branch, BRANCH}}},
 
-NewDeps = [EMQX_DEP, EMQX_MGMT_DEP, EMQX_BRIDGE_DEP | DEPS],
+NewDeps = [EMQX_DEP, EMQX_MGMT_DEP, EMQX_BRIDGE_MQTT_DEP | DEPS],
 
 CONFIG2 = lists:keystore(deps, 1, CONFIG1, {deps, NewDeps}),
+
+io:format("Config2: ~p\n", [CONFIG2]),
 
 CONFIG2.
