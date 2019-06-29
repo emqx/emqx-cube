@@ -74,7 +74,7 @@ list(_Bindings) ->
 
 -spec(update(BridgeSpec :: map()) -> {ok, list()}).
 update(BridgeSpec = #{id := Id, name := Name}) ->
-    emqx_bridge_sup:drop_bridge(maybe_b2a(Name)),
+    emqx_bridge_mqtt_sup:drop_bridge(maybe_b2a(Name)),
     update_bridge(Id, Name, BridgeSpec),
     post_start_bridge(BridgeSpec).
 
@@ -168,7 +168,7 @@ insert_bridge(Bridge = #?TAB{id = Id}) ->
 
 remove_bridge(Id) ->
     handle_lookup(Id, fun(Name, _Options) ->
-                          emqx_bridge_sup:drop_bridge(maybe_b2a(Name))
+                          emqx_bridge_mqtt_sup:drop_bridge(maybe_b2a(Name))
                       end),
     mnesia:transaction(fun mnesia:delete/1, [{?TAB, Id}]).
 
@@ -187,8 +187,8 @@ start_bridge(#{ id := Id, rsp_topic := RspTopic, cube_pid := CubePid}) ->
     StartBridge = fun(Name, Options) ->
                       Name1 = maybe_b2a(Name),
                       Options1 = trans_opts(maps:to_list(Options), Name),
-                      emqx_bridge_sup:create_bridge(Name1, Options1#{bridge_handler => BridgeHandler}),
-                      try emqx_bridge:ensure_started(Name1) of
+                      emqx_bridge_mqtt_sup:create_bridge(Name1, Options1#{bridge_handler => BridgeHandler}),
+                      try emqx_bridge_worker:ensure_started(Name1) of
                           ok -> [{code, ?SUCCESS},
                                  {data, <<"Start bridge successfully">>}];
                           connected -> [{code, ?SUCCESS},
@@ -207,7 +207,7 @@ bridges_status() ->
                   || {_TabName, _Id, Name, _Bridge} <- Bridges]}]}.
 
 get_bridge_status(Name) ->
-    try emqx_bridge:status(Name) of
+    try emqx_bridge_worker:status(Name) of
         standing_by -> disconnected;
         Status -> Status
     catch
@@ -217,7 +217,7 @@ get_bridge_status(Name) ->
 stop_bridge(Id) ->
     DropBridge = fun(Name, _Options) ->
                      Name1 = maybe_b2a(Name),
-                     case emqx_bridge_sup:drop_bridge(Name1) of
+                     case emqx_bridge_mqtt_sup:drop_bridge(Name1) of
                          ok -> [{code, ?SUCCESS}, {data, <<"stop bridge successfully">>}];
                          {error, _Error} -> [{code, ?ERROR4}, {data, <<"stop bridge failed">>}]
                      end
