@@ -16,6 +16,7 @@ eunit: compile
 	$(REBAR) as test eunit
 
 unlock: unlock
+	@rm -rf _build/*/lib/*/rebar.lock
 	$(REBAR) unlock
 
 xref:
