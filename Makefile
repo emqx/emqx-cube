@@ -6,7 +6,7 @@ export REBAR_GIT_CLONE_OPTIONS
 REBAR = rebar3
 all: compile
 
-compile:
+compile: unlock
 	$(REBAR) compile
 
 ct: compile
@@ -14,6 +14,10 @@ ct: compile
 
 eunit: compile
 	$(REBAR) as test eunit
+
+unlock: unlock
+	@rm -rf _build/*/lib/*/rebar.lock
+	$(REBAR) unlock
 
 xref:
 	$(REBAR) xref

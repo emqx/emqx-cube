@@ -169,7 +169,7 @@ bridge_params(BridgeName) ->
      {<<"queue">>,
       [{<<"batch_count_limit">>,32},
        {<<"batch_bytes_limit">>,<<"1000MB">>},
-       {<<"replayq_dir">>,<<"data/emqx_bridge/">>},
+       {<<"replayq_dir">>,<<"data/emqx_bridge_mqtt/">>},
        {<<"replayq_seg_bytes">>,<<"10MB">>}]},
      {<<"reconnect_interval">>,<<"30s">>},
      {<<"retry_interval">>,<<"20s">>},
