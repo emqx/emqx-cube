@@ -17,7 +17,7 @@
 -behaviour(gen_statem).
 
 -include("emqx_cube.hrl").
--include_lib("emqx/include/emqx_client.hrl").
+-include_lib("emqtt/include/emqtt.hrl").
 -include_lib("emqx/include/logger.hrl").
 
 -define(DEFAULT_RECONNECT_DELAY_MS, timer:seconds(5)).
@@ -131,9 +131,9 @@ connect(Config = #{control_topic := ControlTopic}) ->
     ConnectConfig = maps:without([control_topic, ack_topic],
                                  Config#{msg_handler => Handlers}),
     Subs = [{ControlTopic, 1}],
-    case emqx_client:start_link(ConnectConfig) of
+    case emqtt:start_link(ConnectConfig) of
         {ok, Pid} ->
-            case emqx_client:connect(Pid) of
+            case emqtt:connect(Pid) of
                 {ok, _} ->
                     try
                         subscribe_remote_topics(Pid, Subs),
@@ -182,17 +182,17 @@ handle_payload(Payload, RspTopic) ->
 
 subscribe_remote_topics(ClientPid, Subscriptions) ->
     lists:foreach(fun({Topic, QoS}) ->
-                      case emqx_client:subscribe(ClientPid, Topic, QoS) of
+                      case emqtt:subscribe(ClientPid, Topic, QoS) of
                           {ok, _, _} -> ok;
                           Error -> throw(Error)
                       end
                   end, Subscriptions).
 
 send_response(Client, Msg) ->
-    %% This function is evaluated by emqx_client itself.
+    %% This function is evaluated by emqtt itself.
     %% hence delegate to another temp process for the loopback gen_statem call.
     spawn(fun() ->
-              case emqx_client:publish(Client, Msg) of
+              case emqtt:publish(Client, Msg) of
                   {error, Reason} ->
                       ?LOG(info, "Publish failed, Message: ~p, Reason: ~p", [Msg, Reason]);
                   _Ok -> ok
