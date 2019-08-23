@@ -66,82 +66,82 @@ receive_response() ->
     end.
 
 test_sys() ->
-    {ok, C} = emqx_client:start_link(),
-    {ok, _} = emqx_client:connect(C),
-    {ok, _, [1]} = emqx_client:subscribe(C, ?ACK, qos1),
-    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"nodes">>, <<>>), 1),
+    {ok, C} = emqtt:start_link(),
+    {ok, _} = emqtt:connect(C),
+    {ok, _, [1]} = emqtt:subscribe(C, ?ACK, qos1),
+    {ok, _} = emqtt:publish(C, ?CONTROL, construct(sys, <<"nodes">>, <<>>), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"stats">>, <<>>), 1),
+    {ok, _} = emqtt:publish(C, ?CONTROL, construct(sys, <<"stats">>, <<>>), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(C, ?CONTROL, construct(sys, <<"metrics">>, <<>>), 1),
+    {ok, _} = emqtt:publish(C, ?CONTROL, construct(sys, <<"metrics">>, <<>>), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(
                                sys, <<"connections">>, 
                                [{'_page', 1},
                                 {'_limit', 15}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(
                                sys, <<"sessions">>, 
                                [{'_page', 1},
                                 {'_limit', 15}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(
                                sys, <<"topics">>, 
                                [{'_page', 1},
                                 {'_limit', 15}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(
                                sys, <<"subscriptions">>, 
                                [{'_page', 1},
                                 {'_limit', 15}]), 1),
     ?assert(receive_response()),
-    ok = emqx_client:disconnect(C).
+    ok = emqtt:disconnect(C).
 
 test_datasync() ->
-    {ok, C} = emqx_client:start_link(),
-    {ok, _} = emqx_client:connect(C),
-    {ok, _, [1]} = emqx_client:subscribe(C, ?ACK, qos1),
-    {ok, _} = emqx_client:publish(
+    {ok, C} = emqtt:start_link(),
+    {ok, _} = emqtt:connect(C),
+    {ok, _, [1]} = emqtt:subscribe(C, ?ACK, qos1),
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"list">>,
                                        bridge_params()), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"add">>,
                                        bridge_params()), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"lookup">>,
                                        [{id, <<"bridge_id">>}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"update">>,
                                        bridge_params(<<"bridge_name2">>)), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"lookup">>,
                                        [{id, <<"bridge_id">>}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"start">>,
                                        [{id, <<"bridge_id">>}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"status">>,
                                        <<>>), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"stop">>,
                                        [{id, <<"bridge_id">>}]), 1),
     ?assert(receive_response()),
-    {ok, _} = emqx_client:publish(
+    {ok, _} = emqtt:publish(
                 C, ?CONTROL, construct(datasync, <<"delete">>,
                                        [{id, <<"bridge_id">>}]), 1),
     ?assert(receive_response()),
-    ok = emqx_client:disconnect(C).
+    ok = emqtt:disconnect(C).
 
 
 construct(Type, Action, Payload) ->
