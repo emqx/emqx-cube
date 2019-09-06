@@ -19,7 +19,6 @@
         , broker/1
         , metrics/1
         , connections/1
-        , sessions/1
         , topics/1
         , subscriptions/1
         ]).
@@ -41,15 +40,9 @@ metrics(_Bindings) ->
     minirest:return({ok, emqx_metrics:all()}).
 
 connections(Bindings = #{'_page':= PageNum, '_limit' := Limit})->
-    emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(PageNum, Limit));
+    emqx_mgmt_api_clients:list(Bindings#{ node => node() }, params(PageNum, Limit));
 connections(Bindings) ->
-    emqx_mgmt_api_connections:list(Bindings#{ node => node() }, params(1, 5000)).
-
-sessions(Bindings = #{'_page' := PageNum, '_limit' := Limit}) ->
-    emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(PageNum, Limit));
-sessions(Bindings) ->
-    emqx_mgmt_api_sessions:list(Bindings#{ node => node() }, params(1, 5000)).
-
+    emqx_mgmt_api_clients:list(Bindings#{ node => node() }, params(1, 5000)).
 
 topics(#{'_page' := PageNum, '_limit' := Limit}) ->
     emqx_mgmt_api_routes:list(#{}, params(PageNum, Limit));
