@@ -197,7 +197,6 @@ sys_t(_Config) ->
                    emqx_cube_sys:stats(Param),
                    emqx_cube_sys:metrics(Param),
                    {meta, emqx_cube_sys:connections(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
-                   {meta, emqx_cube_sys:sessions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})},
                    {meta, emqx_cube_sys:topics(Param#{'_page' => <<"1">>, '_limit' => <<"20">>})},
                    {meta, emqx_cube_sys:subscriptions(Param#{'_page' => <<"1">>, '_limit' => <<"15">>})}]),
     ok.
